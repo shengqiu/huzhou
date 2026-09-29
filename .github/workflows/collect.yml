@@ -69,11 +69,15 @@ jobs:
         uses: actions/deploy-pages@v4
 
       # 可选：如果配了 CF_* 三个 secret，就顺便灌一份到 Cloudflare KV
-      # 没配就跳过，不影响 Pages
+      # 没配就跳过（secrets 上下文不能用在 if: 里，所以在 shell 里判断）
       - name: （可选）同步到 Cloudflare KV
-        if: ${{ secrets.CF_API_TOKEN != '' }}
         env:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-        run: python3 tools/push_kv.py
+        run: |
+          if [ -z "$CF_API_TOKEN" ]; then
+            echo "未配置 CF_API_TOKEN，跳过 KV 同步（不影响 Pages）"
+            exit 0
+          fi
+          python3 tools/push_kv.py
