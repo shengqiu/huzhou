@@ -127,7 +127,9 @@ def _parse_body(event):
 
 
 def _resp(code, obj):
+    # 腾讯云 API 网关「集成响应」要求的四件套（从云函数控制台建触发器时默认开启）
     return {
+        "isBase64Encoded": False,
         "statusCode": code,
         "headers": {"Content-Type": "application/json; charset=utf-8",
                     "Cache-Control": "no-store"},
