@@ -223,7 +223,10 @@ def main():
                     d = json.loads(t.get("TriggerDesc") or "{}")
                 except Exception:
                     d = {}
+                # 函数 URL 藏在 TriggerDesc.NetConfig 里，HTTP/HTTPS 两条
+                net = d.get("NetConfig") or {}
                 url = (d.get("Url") or d.get("url") or t.get("Url")
+                       or net.get("ExtranetUrl") or net.get("ExtranetHTTPUrl")
                        or d.get("SubnetId") or None)
                 if not url:
                     print(f"  触发器原文：{json.dumps(t, ensure_ascii=False)[:600]}")

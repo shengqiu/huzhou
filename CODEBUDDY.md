@@ -9,7 +9,7 @@
 
 用户原始需求：**工作日每天早上**看一次 **湖州全市、全类型**的环评公示，产出 **HTML 看板**；下载页面里的附件是「非常重要」的一环。**必须免费**。
 
-## 当前状态（2026-09-29 晚）
+## 当前状态（2026-09-30 凌晨 · 全自动已打通）
 
 | 项 | 值 |
 |---|---|
@@ -17,6 +17,8 @@
 | GitHub | https://github.com/shengqiu/huzhou（**public**，Pages 要求免费计划必须公开） |
 | 线上看板 | **https://shengqiu.github.io/huzhou/** ✅ 229 条 / 315 KB |
 | 采集结果 | 229 条公告，其中 59 条带附件，共 81 个附件 ≈ 1 GB |
+| **境内云函数** | ✅ **已上线**：腾讯云 SCF `huzhou-epi-scrape`（ap-shanghai，函数 URL），16 栏目 2.8–5 秒跑完 |
+| 每日 09:00 | ✅ `daily.yml` 全绿实测：境外 runner → 调境内云函数 → 渲染 → 发布 |
 | Cloudflare Worker | 已部署但**采集功能废掉**——出口访问不了政务站（见下） |
 
 ## ⚠️ 头号约束：境外 IP 访问不了 hbj.huzhou.gov.cn
@@ -37,9 +39,10 @@
 **自动路线（定时在 GitHub，执行在境内）**
 `.github/workflows/daily.yml` 每天 **UTC 01:00 = 北京 09:00** 触发，两条子路线：
 
-1. **云函数（推荐，不用常开机器）**：配 secret `SCRAPE_URL` + `SCRAPE_TOKEN` →
+1. **云函数（✅ 已上线，当前在跑这条）**：secret `SCRAPE_URL` + `SCRAPE_TOKEN` 已配好 →
    `tools/fetch_remote.py` 把 `seen` 名单 POST 给境内云函数，拿回新公告合并。
-   云函数不存状态，见 `cloud/README.md`（腾讯云 SCF / 阿里云 FC，免费额度是零头）。
+   云函数不存状态，见 `cloud/README.md`（腾讯云 SCF，费用约 0.05 元/月）。
+   函数地址与 token 只写在 GitHub Secrets 里，**不要写进仓库**。
 2. **自托管 runner**：设变量 `RUNNER_LABEL=self-hosted` + `SCRAPE_MODE=local` →
    在国内机器上直接跑 `monitor.py`。没配就跑在境外托管 runner 上，抓不到，
    但保险丝会拦住（0 条不提交不发布，已实测线上 229 条毫发无损）。
@@ -79,7 +82,7 @@ files/  kv-bulk.json ← gitignore
 
 ## 读过再动手：三个不能破的约束
 
-1. **采集只能在境内跑**。别把 `monitor.py` 塞回 GitHub Actions 或 Worker 的 cron。要全自动就靠 **WorkBuddy 定时任务**在本沙箱触发 `tools/publish.sh`；或者在用户机器上装 self-hosted runner。
+1. **采集只能在境内跑**。别把 `monitor.py` 塞回 GitHub Actions 或 Worker 的 cron。全自动现在靠 **境内云函数**（已上线，`daily.yml` 每天 09:00 调它）；备选是 **WorkBuddy 定时任务**在本沙箱触发 `tools/publish.sh`，或在用户机器上装 self-hosted runner。
 2. **`fileUrl` 是服务端加密的**。下载链接长这样 `download?fileUrl=<密文>&fileName=<文件名>.zip`，base64 解开是 128 字节密文，**算不出真实路径**，只能跟随 302 → 301 重定向到 OSS 直链。
 3. **附件总规模约 1 GB**，单个最大 137.5 MB。Worker 绝对不能下载附件本体（128 MB 内存上限 / KV 单值 25 MB / 命名空间 1 GB）。本体下载永远交给本地 `tools/download.py`。
 
@@ -96,10 +99,11 @@ files/  kv-bulk.json ← gitignore
 
 - [x] GitHub Pages 上线并恢复 229 条数据
 - [x] 每日 09:00 CST 定时（`daily.yml`），境外 runner 已验证会安全 fail-fast
-- [ ] **部署境内云函数**（`cloud/`，腾讯云 SCF 或阿里云 FC）+ 配 `SCRAPE_URL`/
-      `SCRAPE_TOKEN` 两个 secret —— 这是让 9 点定时真正抓到数据的最省事办法
-- [ ] 备选：装 self-hosted runner（境内机器）+ 设 `RUNNER_LABEL=self-hosted`
-      + `SCRAPE_MODE=local`
+- [x] **部署境内云函数**（腾讯云 SCF `huzhou-epi-scrape` / ap-shanghai / 函数 URL）
+      + 配好 `SCRAPE_URL`/`SCRAPE_TOKEN` 两个 secret，`daily.yml` 全链路实测通过
+- [ ] **删除腾讯云子用户 `workbuddy` 并吊销其 SecretId/SecretKey**（部署已完成，密钥不必留）
+- [x] 备选：装 self-hosted runner（境内机器）+ 设 `RUNNER_LABEL=self-hosted`
+      + `SCRAPE_MODE=local` —— 云函数通了，这条不必做了
 - [ ] 决定 Cloudflare Worker 的去留（现在是个只能读 KV 的空壳）
 - [ ] `files/direct_links.csv` 是否纳入仓库（81 条 OSS 直链，配合 `aria2 -i` 可整包拉 1 GB）
 - [ ] 换 fine-grained token：现在用的是 classic PAT（repo+workflow），权限过大，且明文写在 git remote 里

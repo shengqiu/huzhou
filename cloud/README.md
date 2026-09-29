@@ -1,5 +1,10 @@
 # 境内云函数采集端点
 
+> **状态：已上线（2026-09-30）**，腾讯云 SCF · 上海 · 函数 URL。
+> 实测：16 栏目扫描 184 条 / 2.8–5.1 秒 / 0 失败；`daily.yml` 每天 09:00 全链路通过。
+> 地址和 token **只存在 GitHub Secrets**（`SCRAPE_URL` / `SCRAPE_TOKEN`）里，别写进仓库。
+> 换地域/重建函数时直接跑：`python3 cloud/deploy_tc.py --region ap-shanghai --token <任意hex>`
+
 GitHub Actions / Cloudflare 都在境外，访问不了 `hbj.huzhou.gov.cn`。
 把抓取放进**中国大陆的云函数**里，境外只负责调度和发布：
 
@@ -84,6 +89,29 @@ Actions 合并进 data/items.json → 渲染看板 → 提交 → Pages 发布
 | Key | Value |
 |---|---|
 | `SCRAPE_TOKEN` | 一个长随机串，比如 `openssl rand -hex 24` 的输出 |
+
+### 2.3.1 ⚠️ 踩过的坑：CLS / 子账号权限
+
+第一次用子账号部署时函数直接 `CreateFailed`，报：
+
+```
+OperationDenied.AccountNotExists — account is abnormal（CLS service is unregistered）
+```
+
+别被文案骗了，不一定是主账号没开 CLS。SCF 强制把运行日志投递到 CLS，
+建函数时后台会用**你这个密钥的身份**去建日志集。用子账号实测：
+
+```
+cls:DescribeLogsets  → 200 OK（空列表）
+cls:CreateLogset     → AuthFailure.UnauthorizedOperation（logset/* has no permission）
+```
+
+查得到、建不了 → SCF 把它包装成了那句 "CLS service is unregistered"。
+**解决办法**：给子账号（或自己用的密钥）挂 `QcloudCLSFullAccess`；
+如果控制台提示 CLS 未开通，先去 https://console.cloud.tencent.com/cls 点「立即开通」。
+
+另外一句：`CreateFailed` 的函数是颗死子（CodeSize=0，建不了触发器），
+`deploy_tc.py` 会**自动先删再重建**，不用手动清理。
 
 ### 2.4 开「函数 URL」对外暴露
 
