@@ -14,16 +14,11 @@ enabled = true
 # KV 写入 1000 次/天、账号级 Cron Trigger 上限 5 个。这里只占 1 个 cron。
 [triggers]
 crons = ["* * * * *"]
-
 [[kv_namespaces]]
 binding = "EPI_KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "把 REPLACE_WITH_YOUR_KV_NAMESPACE_ID 换成刚复制的 KV ID"
 
 [vars]
-# 每次调用处理几个任务。免费计划建议保持 1 —— 实测单个详情单元约 2~4ms CPU，
-# 留足余量给 fetch/KV 的固有开销和冷启动。付费计划可以调到 20+。
 STEP_SIZE = "1"
-# 每个栏目取最新几条。12 条足够覆盖大部分栏目 2~4 个月的更新量
 LIST_LIMIT = "12"
-# 手动调用 /api/start /api/step 时需要带上 X-Admin-Token 请求头
-ADMIN_TOKEN = "change-me"
+ADMIN_TOKEN = "e9af75ca5bc64361ee495d9e2ad65e31"   # 换掉 change-me，给你生成了一个
