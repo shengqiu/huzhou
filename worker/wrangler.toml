@@ -16,7 +16,7 @@ enabled = true
 crons = ["* * * * *"]
 [[kv_namespaces]]
 binding = "EPI_KV"
-id = "把 REPLACE_WITH_YOUR_KV_NAMESPACE_ID 换成刚复制的 KV ID"
+id = "2dadef55310c405484576de8d62f8841"
 
 [vars]
 STEP_SIZE = "1"
