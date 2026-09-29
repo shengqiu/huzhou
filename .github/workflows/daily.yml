@@ -17,9 +17,9 @@ concurrency:
 
 jobs:
   collect:
-    # 默认 GitHub 托管 runner —— 境外出口访问不了政务站，会 fail-fast（不破坏线上）。
-    # 想真正抓到数据：在境内的机器上装 self-hosted runner，然后到
-    # Settings → Secrets and variables → Actions → Variables 加 RUNNER_LABEL = self-hosted
+    # 配了 SCRAPE_URL（境内云函数）就跑在 GitHub 托管 runner 上，完全不用管网络；
+    # 没配的话默认也在托管 runner 上，但需要你自己改成境内 self-hosted runner
+    # （Settings → Variables 加 RUNNER_LABEL = self-hosted），否则抓不到政务站。
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
 
     environment:
@@ -36,77 +36,78 @@ jobs:
       - name: 装依赖
         run: pip install requests beautifulsoup4
 
-      # 境外出口访问不了 hbj.huzhou.gov.cn：
-      #   Cloudflare Workers 出口 → 20s TimeoutError
-      #   GitHub 托管 runner     → 16 栏目全超时，504 秒拿到 0 条
-      # 先探再跑，不通就停，免得把 0 条数据刷进仓库再发布上线。
-      - name: 探测政务站连通性
-        id: probe
+      # 路线 A（推荐）：调境内云函数抓取 —— 托管 runner 在境外也能用
+      - name: 从境内云函数取新公告
+        id: remote
+        if: ${{ vars.SCRAPE_MODE != 'local' }}
+        env:
+          SCRAPE_URL: ${{ secrets.SCRAPE_URL }}
+          SCRAPE_TOKEN: ${{ secrets.SCRAPE_TOKEN }}
         run: |
-          python3 - <<'PY'
-          import sys, requests
-          from monitor import COLUMNS, LIST_API, UA
-          col = list(COLUMNS)[0]
-          url = LIST_API.format(tag='zw', col=col)
-          try:
-              r = requests.get(url, timeout=12, headers={'User-Agent': UA})
-              print(f'HTTP {r.status_code} / {len(r.content)} bytes')
-              sys.exit(0 if r.status_code == 200 else 1)
-          except Exception as e:
-              print('::error::政务站不可达：' + repr(e))
-              sys.exit(1)
-          PY
+          if [ -z "$SCRAPE_URL" ]; then
+            echo "::warning::没配 SCRAPE_URL，跳过云函数路线"
+            exit 0
+          fi
+          python3 tools/fetch_remote.py
 
-      - name: 采集
-        if: steps.probe.outcome == 'success'
+      # 路线 B：本机直接抓 —— 只有境内 runner 才有效
+      - name: 本机采集
+        if: ${{ vars.SCRAPE_MODE == 'local' }}
         run: python3 monitor.py
 
-      # GITHUB_TOKEN 的 push 不会触发其它 workflow，所以部署也放在本流程里
-      - name: 提交并部署
-        if: steps.probe.outcome == 'success'
-        id: deploy_gate
+      - name: 渲染看板
+        run: python3 tools/render.py
+
+      # 保险丝：0 条就不提交、不发布，免得把线上看板清空
+      - name: 校验数据
+        id: gate
         run: |
           python3 - <<'PY'
           import json, sys
-          d = json.load(open('data/items.json', encoding='utf-8'))
-          att = sum(len(p.get('附件链接', [])) for i in d for p in i.get('项目', []))
-          if len(d) == 0:
-              sys.exit('采集到 0 条，拒绝提交和发布')
-          print(f'::notice::公告 {len(d)} 条 / 附件 {att} 个')
+          items = json.load(open('data/items.json', encoding='utf-8'))
+          if not items:
+              sys.exit('公告 0 条，拒绝提交和发布')
           html = open('reports/index.html', encoding='utf-8').read()
-          if html.count('"unit":') == 0:
+          n = html.count('"unit":')
+          if n == 0:
               sys.exit('看板里 0 条公告，拒绝发布')
+          att = sum(len(p.get('附件链接', [])) for i in items for p in i.get('项目', []))
+          print(f'::notice::公告 {len(items)} 条 / 附件 {att} 个')
           PY
+
+      - name: 提交结果
+        id: commit
+        if: steps.gate.outcome == 'success'
+        run: |
           git config user.name  'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add data reports
           if git diff --cached --quiet; then
-            echo '::notice::无新增公告，仍重新发布一次看板'
+            echo '::notice::无变化'
           else
             git commit -m "data: 自动采集 $(date -u +%F) 09:00 CST"
             git push origin "$(git branch --show-current)"
           fi
 
+      # GITHUB_TOKEN 的 push 不会触发其它 workflow，所以部署也放在本流程里
       - name: 配置 Pages
-        if: steps.deploy_gate.outcome == 'success'
+        if: steps.gate.outcome == 'success'
         uses: actions/configure-pages@v5
 
       - name: 上传看板
-        if: steps.deploy_gate.outcome == 'success'
+        if: steps.gate.outcome == 'success'
         uses: actions/upload-pages-artifact@v3
         with:
           path: reports
 
       - name: 部署到 Pages
-        if: steps.deploy_gate.outcome == 'success'
+        if: steps.gate.outcome == 'success'
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: 出口被拦时给出指引
-        if: failure() && steps.probe.outcome != 'success'
+      - name: 失败指引
+        if: failure()
         run: |
-          echo "::warning::本次未采集 —— runner 出口访问不了 hbj.huzhou.gov.cn"
-          echo "::warning::线上看板保持原样，没有被空数据覆盖"
-          echo "::warning::要让 9 点这个定时真正抓到数据："
-          echo "::warning::  1) 在境内的机器上装 self-hosted runner（仓库 Settings → Actions → Runners）"
-          echo "::warning::  2) Settings → Secrets and variables → Actions → Variables 加 RUNNER_LABEL = self-hosted"
+          echo "::warning::本次没采到数据，线上看板保持原样未被覆盖。"
+          echo "::warning::推荐配路线 A：境内云函数 + secret SCRAPE_URL / SCRAPE_TOKEN"
+          echo "::warning::见 cloud/README.md（腾讯云 SCF / 阿里云 FC 都有免费额度）"
