@@ -93,6 +93,11 @@ def unwrap(resp, what):
     if "Error" in r:
         err = r["Error"]
         print(f"✗ {what} 失败：{err.get('Code')} - {err.get('Message')}")
+        if "CLS" in (err.get("Message") or ""):
+            print()
+            print("  ⚠ 这是账号没开通 CLS（日志服务）导致的，SCF 强制依赖它投递运行日志。")
+            print("    去 https://console.cloud.tencent.com/cls 点「立即开通」（免费额度够用），")
+            print("    开通后重跑本脚本即可，其它都不用改。")
         return None
     return r
 
@@ -106,6 +111,8 @@ def main():
     ap.add_argument("--memory", type=int, default=512)
     ap.add_argument("--timeout", type=int, default=300)
     ap.add_argument("--runtime", default="Python3.10")
+    ap.add_argument("--url-only", action="store_true",
+                    help="代码已上传过，只补建函数 URL")
     args = ap.parse_args()
 
     sid = os.environ.get("TENCENTCLOUD_SECRET_ID", "").strip()
@@ -113,23 +120,34 @@ def main():
     if not sid or not skey:
         sys.exit("请先设置环境变量 TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY")
 
-    zp = args.zip if os.path.isabs(args.zip) else os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), args.zip)
-    if not os.path.exists(zp):
-        sys.exit(f"找不到 {zp}，先跑 ./cloud/build.sh")
-    zdata = base64.b64encode(open(zp, "rb").read()).decode()
-    print(f"▶ 代码包 {zp}（{os.path.getsize(zp)//1024} KB）")
-
     token = args.token or __import__("secrets").token_hex(24)
     env = {"Variables": [{"Key": "SCRAPE_TOKEN", "Value": token}]}
 
-    # 1. 函数是否已存在
-    exists = unwrap(call("GetFunction", {"FunctionName": args.function},
-                         sid, skey, args.region), "查询函数")
-    if exists is None and "ResourceNotFound" not in str(exists):
-        pass
+    # 1. 函数是否已存在（不存在时静默，不打印 ResourceNotFound）
+    r0 = call("GetFunction", {"FunctionName": args.function},
+              sid, skey, args.region)
+    exists = None if "Error" in r0.get("Response", {}) else r0.get("Response")
 
-    if exists:
+    # 1b. 上次创建失败的函数是颗死子（CodeSize=0、建不了触发器），先删掉再重建
+    if exists and (exists.get("Status") or "") == "CreateFailed":
+        print(f"▶ 函数存在但状态 CreateFailed（多半是 CLS 未开通），删除后重建")
+        unwrap(call("DeleteFunction", {"FunctionName": args.function},
+                    sid, skey, args.region), "删除失败的函数")
+        time.sleep(5)
+        exists = None
+
+    if not args.url_only:
+        zp = args.zip if os.path.isabs(args.zip) else os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), args.zip)
+        if not os.path.exists(zp):
+            sys.exit(f"找不到 {zp}，先跑 ./cloud/build.sh")
+        zdata = base64.b64encode(open(zp, "rb").read()).decode()
+        print(f"▶ 代码包 {zp}（{os.path.getsize(zp)//1024} KB）")
+    else:
+        zdata = None
+        print("▶ --url-only：跳过代码上传")
+
+    if exists and not args.url_only:
         print(f"▶ 函数已存在，更新代码和配置")
         r = unwrap(call("UpdateFunctionCode",
                         {"FunctionName": args.function, "ZipFile": zdata,
@@ -144,7 +162,7 @@ def main():
                         sid, skey, args.region), "更新配置")
         if r is None:
             return 1
-    else:
+    elif exists is None:
         print(f"▶ 创建函数 {args.function}（{args.runtime} / {args.memory}MB / {args.timeout}s）")
         r = unwrap(call("CreateFunction", {
             "FunctionName": args.function,
@@ -161,20 +179,36 @@ def main():
             return 1
 
     # 2. 开函数 URL（API 网关已停服，这是官方替代）
-    print("▶ 开启函数 URL")
+    #    刚建好的函数状态是 Creating，这会儿建触发器会被拒，先等它 Active
+    print("▶ 等待函数状态就绪")
+    for _ in range(30):
+        r0 = call("GetFunction", {"FunctionName": args.function},
+                  sid, skey, args.region)
+        st = ((r0.get("Response") or {}).get("Status") or "")
+        if st and st != "Creating" and st != "Updating":
+            print(f"  状态 {st}")
+            break
+        time.sleep(3)
+
     desc = {
         "AuthType": "NONE",                       # 开放，函数内部自己校验 token
         "NetConfig": {"EnableExtranet": True, "EnableIntranet": False},
         "ApiGwCompatible": True,                  # 兼容 apigw 响应格式
         "CorsConfig": {"Enable": False, "Credentials": False, "MaxAge": 0},
     }
-    r = unwrap(call("CreateTrigger", {
-        "FunctionName": args.function,
-        "Type": "http",
-        "TriggerName": "url",
-        "TriggerDesc": json.dumps(desc),
-        "Qualifier": "$LATEST",
-    }, sid, skey, args.region), "创建函数 URL")
+    r = None
+    for attempt in range(1, 6):
+        print(f"▶ 开启函数 URL（第 {attempt} 次）")
+        r = unwrap(call("CreateTrigger", {
+            "FunctionName": args.function,
+            "Type": "http",
+            "TriggerName": "url",
+            "TriggerDesc": json.dumps(desc),
+            "Qualifier": "$LATEST",
+        }, sid, skey, args.region), "创建函数 URL")
+        if r is not None:
+            break
+        time.sleep(5)
     if r is None:
         print("  （可能已经建过了，继续读现有触发器）")
 
