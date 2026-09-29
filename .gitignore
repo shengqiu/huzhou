@@ -1,7 +1,10 @@
-# 采集产物 / 中间产物（都可重新生成）
-data/
-reports/
+# 采集结果必须入库：GitHub Pages 直接发布 reports/index.html，
+# 而境外（GitHub Actions / Cloudflare）访问不了 hbj.huzhou.gov.cn，
+# 采集只能在国内跑完后把结果推上来。
+# 只忽略可重新生成的中间产物：
 kv-bulk.json
+data/*.tmp
+data/state.json.bak
 
 # 下载的环评附件及清单（体积大、属于业务数据）
 files/

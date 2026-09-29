@@ -1,0 +1,61 @@
+name: 发布看板到 GitHub Pages
+
+# 采集不在 CI 里做：GitHub Actions 机房在境外，访问不了 hbj.huzhou.gov.cn
+# （实测 16 个栏目全部超时，504 秒跑完只拿到 0 条）。
+# 采集改在国内跑完 → 把 reports/index.html 推上来 → 本流程只负责发布。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'reports/**'
+      - 'data/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 保险丝：数据为空就别发布，免得把线上已有看板清空
+      - name: 校验看板非空
+        run: |
+          python3 - <<'PY'
+          import re, sys, json, os
+          html = open('reports/index.html', encoding='utf-8').read()
+          m = re.search(r'const DATA\s*=\s*', html)
+          if not m:
+              sys.exit('reports/index.html 里找不到 DATA，拒绝发布')
+          # 每条公告恰好一个 unit 字段，用它数公告条数
+          n = html.count('"unit":')
+          print(f'看板内含公告 {n} 条')
+          if n == 0:
+              sys.exit('看板数据为 0 条，拒绝发布（保护线上已有内容）')
+          print(f'::notice::本次发布 {n} 条公告')
+          PY
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
+      # 看板是自包含单文件，数据已内联；整目录上传
+      - name: 上传看板
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: reports
+
+      - name: 部署到 Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
