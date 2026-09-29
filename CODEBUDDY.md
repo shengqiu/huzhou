@@ -34,7 +34,15 @@
 
 ## 两条运行路线
 
-**国内采集 + 发布（主力，唯一可行的自动路线）**
+**自动路线（定时在 GitHub，执行在境内）**
+`.github/workflows/daily.yml` 每天 **UTC 01:00 = 北京 09:00** 触发。
+`runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}`——
+没配 `RUNNER_LABEL` 就跑在境外托管 runner 上，探测失败即 fail-fast，
+采集/提交/部署全部跳过（已实测，线上 229 条毫发无损）。
+想真抓到数据，就在境内机器上装 self-hosted runner + 设 `RUNNER_LABEL=self-hosted`，
+步骤见 README「三种跑法」。
+
+**国内采集 + 发布（主力，无需任何 runner）**
 ```bash
 ./tools/publish.sh               # 采集 → 生成看板 → 提交 → 推送 → Pages 自动发布
 ./tools/publish.sh --no-push     # 只采集不推送
@@ -82,7 +90,9 @@ files/  kv-bulk.json ← gitignore
 ## 待办 / 下一步
 
 - [x] GitHub Pages 上线并恢复 229 条数据
-- [ ] **建 WorkBuddy 定时任务**：工作日早上跑 `tools/publish.sh`
+- [x] 每日 09:00 CST 定时（`daily.yml`），境外 runner 已验证会安全 fail-fast
+- [ ] **装 self-hosted runner**（境内机器）+ 设 `RUNNER_LABEL=self-hosted`，
+      这是让 9 点定时真正抓到数据的唯一办法
 - [ ] 决定 Cloudflare Worker 的去留（现在是个只能读 KV 的空壳）
 - [ ] `files/direct_links.csv` 是否纳入仓库（81 条 OSS 直链，配合 `aria2 -i` 可整包拉 1 GB）
 - [ ] 换 fine-grained token：现在用的是 classic PAT（repo+workflow），权限过大，且明文写在 git remote 里
