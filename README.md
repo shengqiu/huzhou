@@ -4,18 +4,63 @@
 **项目明细表格**（项目名称 / 建设地点 / 建设单位 / 环评机构 / 受理日期 / 附件下载）挖出来，
 去重后做成可搜索的看板。
 
-## 两种跑法
+## ⚠️ 先看这条：采集只能在境内跑
 
-| | 本地 Python 版 | Cloudflare Worker 版 |
-|---|---|---|
-| 目录 | `monitor.py` | `worker/` |
-| 触发 | 手动 / crontab / WorkBuddy 定时任务 | Cloudflare Cron Trigger（原生，每分钟） |
-| 存储 | `data/items.json` + `data/state.json` | Cloudflare KV（按月分片） |
-| 看板 | `reports/index.html` | Worker 直接渲染，公网可访问 |
-| 成本 | 需要常开的机器 | **Workers 免费计划即可** |
-| 适合 | 调试解析规则、导出历史数据 | 长期无人值守、随时手机上打开 |
+`hbj.huzhou.gov.cn` 拒绝境外 IP，实测结果：
 
-→ **部署到 Cloudflare Worker 看 [`worker/README.md`](worker/README.md)**，按免费计划 10ms CPU 限制专门设计过。
+| 环境 | 结果 |
+|---|---|
+| 境内（本机 / 国内服务器） | ✅ 16 栏目 30 秒跑完，229 条 |
+| Cloudflare Workers 出口 | ❌ `TimeoutError` 20s |
+| GitHub Actions 托管 runner（美国机房） | ❌ 16 栏目全超时，504 秒 0 条 |
+
+所以 **GitHub Actions 只负责发布，不负责采集**。看板发布在
+**https://shengqiu.github.io/huzhou/**。
+
+## 三种跑法
+
+| | 手动一键 | GitHub Actions 定时（配自托管 runner） | Cloudflare Worker |
+|---|---|---|---|
+| 目录 | `tools/publish.sh` | `.github/workflows/daily.yml` | `worker/` |
+| 触发 | 手动 | **每天 09:00 CST 自动** | Cron Trigger（每分钟） |
+| 采集在哪跑 | 本机（境内） | 你自己的机器（境内） | Cloudflare 出口 ❌ 抓不到 |
+| 看板 | `reports/index.html` → GitHub Pages | 同上 | Worker 渲染 |
+| 成本 | 免费 | 免费 | 免费 |
+
+### 1. 手动一键（最快）
+
+```bash
+cd /workspace
+./tools/publish.sh          # 采集 → 生成看板 → 提交 → 推送 → Pages 自动发布
+./tools/publish.sh --no-push  # 只采集不推送
+```
+
+### 2. 让「每天 09:00」真正抓到数据：装 self-hosted runner
+
+`daily.yml` 的定时已经配好（UTC 01:00 = 北京 09:00）。默认跑在 GitHub 托管
+runner 上，会被政务站拦住——流程会 fail-fast 并**跳过发布**，线上看板不受影响
+（已验证）。要让它真正采到数据，在你境内常开的机器上装个 runner：
+
+1. 仓库 → **Settings → Actions → Runners → New self-hosted runner**，选 Linux/macOS，
+   复制页面上的 token
+2. 在那台机器上：
+   ```bash
+   mkdir actions-runner && cd actions-runner
+   curl -o r.tar.gz -L https://github.com/actions-runner/releases/download/v2.317.0/actions-runner-osx-arm64-2.317.0.tar.gz
+   tar xzf r.tar.gz
+   ./config.sh --url https://github.com/shengqiu/huzhou --token <页面给的TOKEN>
+   ./run.sh          # 想常驻就 ./svc.sh install && ./svc.sh start
+   ```
+3. 仓库 → **Settings → Secrets and variables → Actions → Variables**
+   → 新建变量 `RUNNER_LABEL` = `self-hosted`
+
+之后每天 09:00 会自动在国内网络采集 + 提交 + 发布。机器关机时任务会 pending，
+开机后补跑。
+
+### 3. 还是只想要推送后的自动发布
+
+`.github/workflows/pages.yml`：任何 `reports/` 或 `data/` 变更推到 main 都会
+触发，并且**看板数据为 0 条时拒绝发布**（保险丝）。
 
 ## 采集范围
 

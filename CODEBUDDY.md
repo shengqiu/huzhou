@@ -7,21 +7,42 @@
 
 自动盯 **湖州市生态环境局**（`hbj.huzhou.gov.cn`）的环评公示栏目，把 **16 个栏目**（市局 + 吴兴/南太湖新区/南浔/德清/长兴/安吉/长合分局 × 非辐环评审批、辐射项目审批，外加全市建设项目环评信息公示）的新公告抓下来，提取出**项目表格**（项目名称、建设地点、建设单位、环评机构、受理日期）+ **附件链接**（环评报告书 / 报告表 / 公参说明），存起来并出成一个可搜索的 HTML 看板，同时支持把附件本体下载到本地。
 
-用户原始需求：**工作日每天早上**看一次 **湖州全市、全类型**的环评公示，产出 **HTML 看板**；下载页面里的附件是「非常重要」的一环。
+用户原始需求：**工作日每天早上**看一次 **湖州全市、全类型**的环评公示，产出 **HTML 看板**；下载页面里的附件是「非常重要」的一环。**必须免费**。
 
-## 当前状态（2026-09-29）
+## 当前状态（2026-09-29 晚）
 
 | 项 | 值 |
 |---|---|
 | 工作空间根目录 | `/workspace`（**本目录本身就是项目根目录**，不是子目录） |
-| GitHub | https://github.com/shengqiu/huzhou （private，提交 `ee29620`） |
+| GitHub | https://github.com/shengqiu/huzhou（**public**，Pages 要求免费计划必须公开） |
+| 线上看板 | **https://shengqiu.github.io/huzhou/** ✅ 229 条 / 315 KB |
 | 采集结果 | 229 条公告，其中 59 条带附件，共 81 个附件 ≈ 1 GB |
-| Cloudflare Worker | 代码就绪，**尚未部署**（需用户本地 `wrangler login` + 建 KV namespace） |
-| WorkBuddy 定时任务 | 未创建（被 Worker 的原生 cron 取代） |
+| Cloudflare Worker | 已部署但**采集功能废掉**——出口访问不了政务站（见下） |
+
+## ⚠️ 头号约束：境外 IP 访问不了 hbj.huzhou.gov.cn
+
+这是整个架构的决定性事实，**别再试图把采集搬到境外**：
+
+| 环境 | 结果 |
+|---|---|
+| 本地 / 本沙箱（国内） | ✅ 16 栏目 30 秒跑完，229 条 |
+| Cloudflare Workers 出口 | ❌ `TimeoutError` 20s（`/api/probe` 两种 tagId 全超时） |
+| GitHub Actions（美国机房） | ❌ 16 栏目全部超时，**504 秒拿到 0 条**，还把线上看板刷成了空数组 |
+
+所以现在的分工是：**采集在国内跑 → 把结果推到 GitHub → GitHub Pages 只负责发布**。
+`pages.yml` 里有一道保险丝：看板数据为 0 条时**拒绝发布**，防止再次被空数据覆盖。
 
 ## 两条运行路线
 
-**本地一次性采集**（主力，跑完整历史）
+**国内采集 + 发布（主力，唯一可行的自动路线）**
+```bash
+./tools/publish.sh               # 采集 → 生成看板 → 提交 → 推送 → Pages 自动发布
+./tools/publish.sh --no-push     # 只采集不推送
+./tools/publish.sh --force       # 无新增也提交
+./tools/publish.sh --kv          # 顺便同步到 Cloudflare KV（需 CF_* 环境变量）
+```
+
+**单独跑采集 / 下附件**
 ```bash
 python3 monitor.py                 # ~30 秒，写 data/items.json + data/state.json + reports/index.html
 python3 tools/download.py --dry-run          # 看看有哪些附件、多大
@@ -29,33 +50,25 @@ python3 tools/download.py --unit 南浔分局     # 按单位下载
 python3 tools/download.py --resolve          # 解析全部附件的 OSS 直链 → files/direct_links.csv
 ```
 
-**Cloudflare Workers**（免费计划，自动增量）
-```bash
-cd worker && npm i
-npx wrangler login
-npx wrangler kv namespace create EPI_KV      # 把返回的 id 填进 wrangler.toml
-npx wrangler kv bulk put ../kv-bulk.json --binding EPI_KV   # 灌种子数据（可选但推荐）
-npx wrangler deploy
-```
-详细部署说明见 [`worker/README.md`](worker/README.md)。
-
 ## 目录
 
 ```
 monitor.py           采集器，纯 HTTP（不用浏览器）
+tools/publish.sh     一键采集 + 推送（国内跑）
 tools/export_kv.py   本地数据 → KV bulk 格式（按月分片）
+tools/push_kv.py     kv-bulk.json → Cloudflare KV（需 CF_* 三个环境变量）
 tools/download.py    附件下载 + OSS 直链解析
-worker/              Cloudflare Workers（src/index.js + wrangler.toml + README）
-worker/README.md     部署手册 / KV 字典 / 配额计算
-docs/                本项目的完整技术文档（见下）
-data/  reports/  files/  kv-bulk.json   ← 都是生成物，已 gitignore
+.github/workflows/pages.yml   只发布 reports/ 到 Pages（不采集）
+worker/              Cloudflare Workers（已部署，但只能当只读壳子）
+data/  reports/      ← 已入库：Pages 的发布源就是仓库里的看板
+files/  kv-bulk.json ← gitignore
 ```
 
 ## 读过再动手：三个不能破的约束
 
-1. **Workers Free 每次调用只有 10ms CPU**（HTTP 请求和 Cron Trigger 都一样）。所以 `worker/src/index.js` 才被拆成「每次 cron 只消费 1 个单元任务」的架构。别把它改回「一次请求跑完整个流程」，别调大 `STEP_SIZE`。
+1. **采集只能在境内跑**。别把 `monitor.py` 塞回 GitHub Actions 或 Worker 的 cron。要全自动就靠 **WorkBuddy 定时任务**在本沙箱触发 `tools/publish.sh`；或者在用户机器上装 self-hosted runner。
 2. **`fileUrl` 是服务端加密的**。下载链接长这样 `download?fileUrl=<密文>&fileName=<文件名>.zip`，base64 解开是 128 字节密文，**算不出真实路径**，只能跟随 302 → 301 重定向到 OSS 直链。
-3. **附件总规模约 1 GB**，单个最大 137.5 MB。Worker 绝对不能下载附件本体（128 MB 内存上限 / KV 单值 25 MB / 命名空间 1 GB）。分工是：Worker 只存元数据和链接，本体下载交给本地 `tools/download.py`。
+3. **附件总规模约 1 GB**，单个最大 137.5 MB。Worker 绝对不能下载附件本体（128 MB 内存上限 / KV 单值 25 MB / 命名空间 1 GB）。本体下载永远交给本地 `tools/download.py`。
 
 ## 文档索引
 
@@ -68,7 +81,8 @@ data/  reports/  files/  kv-bulk.json   ← 都是生成物，已 gitignore
 
 ## 待办 / 下一步
 
-- [ ] Worker 实际部署（需用户在本地执行 wrangler 命令）
-- [ ] 加 GitHub Actions：工作日早上定时采集 + 自动 `wrangler deploy`（需 Cloudflare API Token）
+- [x] GitHub Pages 上线并恢复 229 条数据
+- [ ] **建 WorkBuddy 定时任务**：工作日早上跑 `tools/publish.sh`
+- [ ] 决定 Cloudflare Worker 的去留（现在是个只能读 KV 的空壳）
 - [ ] `files/direct_links.csv` 是否纳入仓库（81 条 OSS 直链，配合 `aria2 -i` 可整包拉 1 GB）
-- [ ] 给 WorkBuddy 提 bug：GitHub 连接器令牌只有 contents 只读权限，导致无法推送到用户自己的仓库
+- [ ] 换 fine-grained token：现在用的是 classic PAT（repo+workflow），权限过大，且明文写在 git remote 里
