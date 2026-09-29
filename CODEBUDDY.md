@@ -1,6 +1,7 @@
 # WorkBuddy Project · 湖州环保环评公示监测
 
 > 给未来的会话看：先读这个文件，再决定动哪里的代码。
+> 本目录（`/workspace`）已被设为 **WorkBuddy 项目工作区根目录**——新建任务时在输入框左下角「选择工作空间」选这个目录，就能接着这个项目继续。
 
 ## 这个项目在干什么
 
@@ -12,7 +13,7 @@
 
 | 项 | 值 |
 |---|---|
-| 本地路径 | `/workspace/huzhou-epi-monitor` |
+| 工作空间根目录 | `/workspace`（**本目录本身就是项目根目录**，不是子目录） |
 | GitHub | https://github.com/shengqiu/huzhou （private，提交 `ee29620`） |
 | 采集结果 | 229 条公告，其中 59 条带附件，共 81 个附件 ≈ 1 GB |
 | Cloudflare Worker | 代码就绪，**尚未部署**（需用户本地 `wrangler login` + 建 KV namespace） |

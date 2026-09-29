@@ -6,6 +6,9 @@ kv-bulk.json
 # 下载的环评附件及清单（体积大、属于业务数据）
 files/
 
+# WorkBuddy 会话数据（含 session id 等，不入库）
+.codebuddy/
+
 # Python
 __pycache__/
 *.pyc
