@@ -1,0 +1,23 @@
+# 采集产物 / 中间产物（都可重新生成）
+data/
+reports/
+kv-bulk.json
+
+# 下载的环评附件及清单（体积大、属于业务数据）
+files/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / wrangler
+node_modules/
+.wrangler/
+.dev.vars
+worker/wrangler.local.toml
+
+# 系统
+.DS_Store
+*.log

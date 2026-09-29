@@ -1,0 +1,29 @@
+name = "huzhou-epi-monitor"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# 默认部署到 *.workers.dev，需要自定义域名时取消下面注释并填 zone 信息
+# workers_dev = false
+# routes = [{ pattern = "epi.example.com", custom_domain = true }]
+
+[observability]
+enabled = true
+
+# 免费计划关键设计：cron 每分钟触发一次，每次只消化 1 个极小的单元任务。
+# 官方限制 Workers Free：CPU 10ms/次（HTTP 和 Cron Trigger 都一样）、100k 请求/天、
+# KV 写入 1000 次/天、账号级 Cron Trigger 上限 5 个。这里只占 1 个 cron。
+[triggers]
+crons = ["* * * * *"]
+
+[[kv_namespaces]]
+binding = "EPI_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+[vars]
+# 每次调用处理几个任务。免费计划建议保持 1 —— 实测单个详情单元约 2~4ms CPU，
+# 留足余量给 fetch/KV 的固有开销和冷启动。付费计划可以调到 20+。
+STEP_SIZE = "1"
+# 每个栏目取最新几条。12 条足够覆盖大部分栏目 2~4 个月的更新量
+LIST_LIMIT = "12"
+# 手动调用 /api/start /api/step 时需要带上 X-Admin-Token 请求头
+ADMIN_TOKEN = "change-me"

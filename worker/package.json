@@ -1,0 +1,17 @@
+{
+  "name": "huzhou-epi-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "湖州环评公示监测 - Cloudflare Worker + KV",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cron:test": "wrangler dev --test-scheduled",
+    "tail": "wrangler tail",
+    "kv:seed": "wrangler kv bulk put ../kv-bulk.json --binding=EPI_KV"
+  },
+  "devDependencies": {
+    "wrangler": "^3.114.17"
+  }
+}
