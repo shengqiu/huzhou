@@ -17,15 +17,15 @@
 所以 **GitHub Actions 只负责发布，不负责采集**。看板发布在
 **https://shengqiu.github.io/huzhou/**。
 
-## 三种跑法
+## 四种跑法
 
-| | 手动一键 | GitHub Actions 定时（配自托管 runner） | Cloudflare Worker |
-|---|---|---|---|
-| 目录 | `tools/publish.sh` | `.github/workflows/daily.yml` | `worker/` |
-| 触发 | 手动 | **每天 09:00 CST 自动** | Cron Trigger（每分钟） |
-| 采集在哪跑 | 本机（境内） | 你自己的机器（境内） | Cloudflare 出口 ❌ 抓不到 |
-| 看板 | `reports/index.html` → GitHub Pages | 同上 | Worker 渲染 |
-| 成本 | 免费 | 免费 | 免费 |
+| | 手动一键 | **云函数（推荐）** | Actions + 自托管 runner | Cloudflare Worker |
+|---|---|---|---|---|
+| 目录 | `tools/publish.sh` | `cloud/` | `.github/workflows/daily.yml` | `worker/` |
+| 触发 | 手动 | **每天 09:00 CST 自动** | 每天 09:00 CST 自动 | Cron（每分钟） |
+| 采集在哪跑 | 本机（境内） | 腾讯云/阿里云（境内） | 你自己常开的机器 | Cloudflare 出口 ❌ |
+| 要常开机器吗 | 否 | **否** | 是 | 否 |
+| 看板 | GitHub Pages | GitHub Pages | GitHub Pages | Worker 渲染 |
 
 ### 1. 手动一键（最快）
 
@@ -35,7 +35,22 @@ cd /workspace
 ./tools/publish.sh --no-push  # 只采集不推送
 ```
 
-### 2. 让「每天 09:00」真正抓到数据：装 self-hosted runner
+### 2. 云函数：不用常开机器也能全自动 ⭐
+
+把抓取放进境内云函数（腾讯云 SCF / 阿里云 FC，都有免费额度），
+GitHub Actions 只负责每天 09:00 调度、合并、发布：
+
+```
+Actions（境外无所谓） → POST seen → 境内云函数抓+解析 → 返回新公告 → 合并 → Pages
+```
+
+云函数**不存状态**：已处理公告的 id 名单随请求带来带去，所以不用接 COS/OSS，
+一个纯函数就够。日常增量只传几十 KB。
+
+完整部署步骤见 [`cloud/README.md`](cloud/README.md) —— 打包、上传、
+改超时（API 网关默认 15s 必超时）、配 `SCRAPE_URL`/`SCRAPE_TOKEN` 两个 secret。
+
+### 3. 让「每天 09:00」真正抓到数据：装 self-hosted runner
 
 `daily.yml` 的定时已经配好（UTC 01:00 = 北京 09:00）。默认跑在 GitHub 托管
 runner 上，会被政务站拦住——流程会 fail-fast 并**跳过发布**，线上看板不受影响
@@ -57,7 +72,7 @@ runner 上，会被政务站拦住——流程会 fail-fast 并**跳过发布**�
 之后每天 09:00 会自动在国内网络采集 + 提交 + 发布。机器关机时任务会 pending，
 开机后补跑。
 
-### 3. 还是只想要推送后的自动发布
+### 4. 还是只想要推送后的自动发布
 
 `.github/workflows/pages.yml`：任何 `reports/` 或 `data/` 变更推到 main 都会
 触发，并且**看板数据为 0 条时拒绝发布**（保险丝）。

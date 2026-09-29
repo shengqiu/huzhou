@@ -35,12 +35,14 @@
 ## 两条运行路线
 
 **自动路线（定时在 GitHub，执行在境内）**
-`.github/workflows/daily.yml` 每天 **UTC 01:00 = 北京 09:00** 触发。
-`runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}`——
-没配 `RUNNER_LABEL` 就跑在境外托管 runner 上，探测失败即 fail-fast，
-采集/提交/部署全部跳过（已实测，线上 229 条毫发无损）。
-想真抓到数据，就在境内机器上装 self-hosted runner + 设 `RUNNER_LABEL=self-hosted`，
-步骤见 README「三种跑法」。
+`.github/workflows/daily.yml` 每天 **UTC 01:00 = 北京 09:00** 触发，两条子路线：
+
+1. **云函数（推荐，不用常开机器）**：配 secret `SCRAPE_URL` + `SCRAPE_TOKEN` →
+   `tools/fetch_remote.py` 把 `seen` 名单 POST 给境内云函数，拿回新公告合并。
+   云函数不存状态，见 `cloud/README.md`（腾讯云 SCF / 阿里云 FC，免费额度是零头）。
+2. **自托管 runner**：设变量 `RUNNER_LABEL=self-hosted` + `SCRAPE_MODE=local` →
+   在国内机器上直接跑 `monitor.py`。没配就跑在境外托管 runner 上，抓不到，
+   但保险丝会拦住（0 条不提交不发布，已实测线上 229 条毫发无损）。
 
 **国内采集 + 发布（主力，无需任何 runner）**
 ```bash
@@ -62,7 +64,10 @@ python3 tools/download.py --resolve          # 解析全部附件的 OSS 直链 
 
 ```
 monitor.py           采集器，纯 HTTP（不用浏览器）
+cloud/               境内云函数采集端点（腾讯云 SCF / 阿里云 FC）+ 打包脚本
 tools/publish.sh     一键采集 + 推送（国内跑）
+tools/fetch_remote.py  调云函数取新公告并合并进 data/items.json
+tools/render.py      只渲染看板不采集（境外 runner 用）
 tools/export_kv.py   本地数据 → KV bulk 格式（按月分片）
 tools/push_kv.py     kv-bulk.json → Cloudflare KV（需 CF_* 三个环境变量）
 tools/download.py    附件下载 + OSS 直链解析
@@ -91,8 +96,10 @@ files/  kv-bulk.json ← gitignore
 
 - [x] GitHub Pages 上线并恢复 229 条数据
 - [x] 每日 09:00 CST 定时（`daily.yml`），境外 runner 已验证会安全 fail-fast
-- [ ] **装 self-hosted runner**（境内机器）+ 设 `RUNNER_LABEL=self-hosted`，
-      这是让 9 点定时真正抓到数据的唯一办法
+- [ ] **部署境内云函数**（`cloud/`，腾讯云 SCF 或阿里云 FC）+ 配 `SCRAPE_URL`/
+      `SCRAPE_TOKEN` 两个 secret —— 这是让 9 点定时真正抓到数据的最省事办法
+- [ ] 备选：装 self-hosted runner（境内机器）+ 设 `RUNNER_LABEL=self-hosted`
+      + `SCRAPE_MODE=local`
 - [ ] 决定 Cloudflare Worker 的去留（现在是个只能读 KV 的空壳）
 - [ ] `files/direct_links.csv` 是否纳入仓库（81 条 OSS 直链，配合 `aria2 -i` 可整包拉 1 GB）
 - [ ] 换 fine-grained token：现在用的是 classic PAT（repo+workflow），权限过大，且明文写在 git remote 里
