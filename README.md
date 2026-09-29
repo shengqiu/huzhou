@@ -45,7 +45,7 @@ GET https://hbj.huzhou.gov.cn/api-gateway/jpaas-publish-server/front/page/build/
 ## 本地快速开始
 
 ```bash
-cd /workspace/huzhou-epi-monitor
+cd /workspace
 python3 monitor.py            # 首次运行会建立历史基线
 python3 monitor.py --limit 20 # 也可以让每个栏目多抓几条
 open reports/index.html

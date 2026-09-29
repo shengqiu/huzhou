@@ -14,7 +14,7 @@ KV 结构（自由版）：
     pending     任务队列
 
 用法：
-    cd /workspace/huzhou-epi-monitor
+    cd /workspace
     python3 monitor.py            # 先本地跑出 data/items.json
     python3 tools/export_kv.py    # 生成 kv-bulk.json
     cd worker && npx wrangler kv bulk put ../kv-bulk.json --binding=EPI_KV

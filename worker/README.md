@@ -48,7 +48,7 @@
 ### 1. 装依赖并登录
 
 ```bash
-cd /workspace/huzhou-epi-monitor/worker
+cd /workspace/worker
 npm install
 npx wrangler login
 ```
@@ -86,7 +86,7 @@ LIST_LIMIT = "12"         # 每个栏目取最新 12 条
 不然第一次要慢慢跑好几个小时才能看到东西。
 
 ```bash
-cd /workspace/huzhou-epi-monitor
+cd /workspace
 python3 monitor.py            # 本地采集，产出 data/items.json
 python3 tools/export_kv.py    # 按月份分片打包成 kv-bulk.json
 cd worker
