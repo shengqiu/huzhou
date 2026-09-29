@@ -33,6 +33,7 @@
 cd /workspace
 ./tools/publish.sh          # 采集 → 生成看板 → 提交 → 推送 → Pages 自动发布
 ./tools/publish.sh --no-push  # 只采集不推送
+./tools/publish.sh --mail     # 顺便按「项目」逐封发邮件 + 附件（见 docs/05-邮件推送.md）
 ```
 
 ### 2. 云函数：不用常开机器也能全自动 ⭐
@@ -147,6 +148,24 @@ python3 tools/download.py --since 2026-09-01   # 只要某天之后的
 python3 tools/download.py --max-size 50        # 跳过超过 50MB 的
 python3 tools/download.py --workers 5          # 提高并发
 ```
+
+## 按项目发邮件（附件打包随信）
+
+每条公告有好几个项目，**一个项目一封邮件**，附件打包后随信发送：
+
+```bash
+export SMTP_USER="你的邮箱@qq.com"      # 密码填 16 位 SMTP 授权码
+export SMTP_PASS="十六位授权码"
+python3 tools/mailer.py --dry-run            # 先看清单，不发信
+python3 tools/mailer.py --limit 3            # 试发 3 封确认排版
+python3 tools/mailer.py --since 30 --yes     # 补发最近 30 天
+```
+
+- 附件 ≤30MB → 打包成 zip 作为邮件附件；超过 → 正文给政务网 OSS 直链（+ 可选 COS 备份）
+- 没附件的项目也发，正文只放项目信息
+- 已发过的记在 `data/mail_state.json`，不会重复轰炸
+
+完整说明见 [`docs/05-邮件推送.md`](docs/05-邮件推送.md)。
 
 产物：
 

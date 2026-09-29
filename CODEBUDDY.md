@@ -74,6 +74,7 @@ tools/render.py      只渲染看板不采集（境外 runner 用）
 tools/export_kv.py   本地数据 → KV bulk 格式（按月分片）
 tools/push_kv.py     kv-bulk.json → Cloudflare KV（需 CF_* 三个环境变量）
 tools/download.py    附件下载 + OSS 直链解析
+tools/mailer.py      按「项目」逐封发邮件 + 附件打包（需 SMTP_* 环境变量）
 .github/workflows/pages.yml   只发布 reports/ 到 Pages（不采集）
 worker/              Cloudflare Workers（已部署，但只能当只读壳子）
 data/  reports/      ← 已入库：Pages 的发布源就是仓库里的看板
@@ -82,7 +83,7 @@ files/  kv-bulk.json ← gitignore
 
 ## 读过再动手：三个不能破的约束
 
-1. **采集只能在境内跑**。别把 `monitor.py` 塞回 GitHub Actions 或 Worker 的 cron。全自动现在靠 **境内云函数**（已上线，`daily.yml` 每天 09:00 调它）；备选是 **WorkBuddy 定时任务**在本沙箱触发 `tools/publish.sh`，或在用户机器上装 self-hosted runner。
+1. **采集和发邮件都只能在境内跑**。别把 `monitor.py` 或 `tools/mailer.py` 塞回 GitHub Actions / Worker 的 cron——境外下不动政务网附件，attach 模式会全部退化成链接。采集的全自动现在靠 **境内云函数**（已上线，`daily.yml` 每天 09:00 调它）；邮件则走本沙箱或用户机器（可挂 `./tools/publish.sh --mail`）；备选是 **WorkBuddy 定时任务**或 self-hosted runner。
 2. **`fileUrl` 是服务端加密的**。下载链接长这样 `download?fileUrl=<密文>&fileName=<文件名>.zip`，base64 解开是 128 字节密文，**算不出真实路径**，只能跟随 302 → 301 重定向到 OSS 直链。
 3. **附件总规模约 1 GB**，单个最大 137.5 MB。Worker 绝对不能下载附件本体（128 MB 内存上限 / KV 单值 25 MB / 命名空间 1 GB）。本体下载永远交给本地 `tools/download.py`。
 
@@ -94,6 +95,7 @@ files/  kv-bulk.json ← gitignore
 | [`docs/02-技术决策.md`](docs/02-技术决策.md) | 为什么不用浏览器、为什么拆单元任务、KV 为什么按月分片 |
 | [`docs/03-数据源清单.md`](docs/03-数据源清单.md) | 16 个栏目的 colId、隐藏 JSON 接口、TagId 坑 |
 | [`docs/04-附件下载.md`](docs/04-附件下载.md) | 81 个附件的统计、OSS 直链机制、命令行用法 |
+| [`docs/05-邮件推送.md`](docs/05-邮件推送.md) | 按项目发邮件：SMTP 配置、三种模式、去重、COS 备份 |
 
 ## 待办 / 下一步
 
@@ -104,6 +106,8 @@ files/  kv-bulk.json ← gitignore
 - [ ] **删除腾讯云子用户 `workbuddy` 并吊销其 SecretId/SecretKey**（部署已完成，密钥不必留）
 - [x] 备选：装 self-hosted runner（境内机器）+ 设 `RUNNER_LABEL=self-hosted`
       + `SCRAPE_MODE=local` —— 云函数通了，这条不必做了
+- [ ] **按项目发邮件**：`tools/mailer.py` 已写好并 dry-run 通过（92 封），
+      等用户提供 SMTP 授权码后试发 3 封验证排版，再分批全量
 - [ ] 决定 Cloudflare Worker 的去留（现在是个只能读 KV 的空壳）
 - [ ] `files/direct_links.csv` 是否纳入仓库（81 条 OSS 直链，配合 `aria2 -i` 可整包拉 1 GB）
 - [ ] 换 fine-grained token：现在用的是 classic PAT（repo+workflow），权限过大，且明文写在 git remote 里

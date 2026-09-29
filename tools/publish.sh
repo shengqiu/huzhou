@@ -11,6 +11,7 @@
 #   ./tools/publish.sh --force      # 无新增也提交（重刷看板样式/时间戳）
 #   ./tools/publish.sh --no-push    # 只采集不推送
 #   ./tools/publish.sh --kv         # 顺便同步到 Cloudflare KV（需 CF_* 环境变量）
+#   ./tools/publish.sh --mail       # 顺便按项目发邮件（需 SMTP_* 环境变量）
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -18,12 +19,14 @@ cd "$(dirname "$0")/.."
 FORCE=0
 PUSH=1
 KV=0
+MAIL=0
 for a in "$@"; do
   case "$a" in
     --force)   FORCE=1 ;;
     --no-push) PUSH=0 ;;
     --kv)      KV=1 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    --mail)    MAIL=1 ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
     *) echo "未知参数: $a"; exit 1 ;;
   esac
 done
@@ -49,6 +52,13 @@ python3 tools/export_kv.py
 if [ "$KV" = "1" ]; then
   echo "▶ 同步到 Cloudflare KV"
   python3 tools/push_kv.py
+fi
+
+# 邮件必须在采集之后（依赖新的 items.json）、git add 之前（不污染提交）。
+# 别塞进 daily.yml：GitHub Actions 在境外下不动政务网附件，会全部退化成链接模式。
+if [ "$MAIL" = "1" ]; then
+  echo "▶ 按项目发邮件"
+  python3 tools/mailer.py --since 7 --yes || echo "⚠ 邮件步骤失败，不影响推送"
 fi
 
 if [ "$PUSH" = "0" ]; then
