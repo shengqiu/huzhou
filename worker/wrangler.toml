@@ -1,6 +1,11 @@
-name = "huzhou-epi-monitor"
+name = "huzhou"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
+
+# 关键：保留在 Cloudflare dashboard 上配置的变量/绑定。
+# 默认行为（false）是「每次部署都先删掉 dashboard 上设的所有 var」，
+# 那样网页里配的东西会在下一次 CI 部署时被清掉。
+keep_vars = true
 
 # 默认部署到 *.workers.dev，需要自定义域名时取消下面注释并填 zone 信息
 # workers_dev = false
@@ -14,11 +19,15 @@ enabled = true
 # KV 写入 1000 次/天、账号级 Cron Trigger 上限 5 个。这里只占 1 个 cron。
 [triggers]
 crons = ["* * * * *"]
+# KV id 不是密钥，写在这里能保证每次部署都指向同一个 namespace。
+# 如果哪天想改成「让 wrangler 自动创建」，删掉下面这行 id 即可（会新建一个 namespace，旧数据留在旧的里）。
 [[kv_namespaces]]
 binding = "EPI_KV"
 id = "2dadef55310c405484576de8d62f8841"
 
-[vars]
-STEP_SIZE = "1"
-LIST_LIMIT = "12"
-ADMIN_TOKEN = "e9af75ca5bc64361ee495d9e2ad65e31"   # 换掉 change-me，给你生成了一个
+# 运行期变量一律不写在这里，改到 Cloudflare dashboard：
+#   Workers & Pages → huzhou → Settings → Variables and Secrets
+#   - ADMIN_TOKEN   : 选 Secret（加密），例如 e9af75ca5bc64361ee495d9e2ad65e31
+#   - STEP_SIZE     : 明文 1（免费计划别调大）
+#   - LIST_LIMIT    : 明文 12
+# 代码里都有兜底默认值：STEP_SIZE 缺省 1，LIST_LIMIT 缺省 12，ADMIN_TOKEN 缺省为空（管理接口自动关闭）。

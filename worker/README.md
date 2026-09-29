@@ -55,31 +55,31 @@ npx wrangler login
 
 ### 2. 创建 KV 命名空间
 
-```bash
-npx wrangler kv namespace create epi_kv
-```
+**不用手动建**——`wrangler.toml` 里的 `[[kv_namespaces]]` 故意只写了 `binding` 没写 `id`，
+部署时 wrangler 会自己创建（官方叫 automatic provisioning）。这样账号资源 ID 就不会进仓库。
 
-输出里把 `id` 抄下来：
+想固定用某个已存在的 namespace 也可以，补上 id 即可：
 
-```
+```toml
 [[kv_namespaces]]
 binding = "EPI_KV"
 id = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 ```
 
-### 3. 填进 wrangler.toml
+### 3. 运行期变量放到 dashboard（不要写进仓库）
 
-替换 `wrangler.toml` 里的 `REPLACE_WITH_YOUR_KV_NAMESPACE_ID`，顺手改掉 `ADMIN_TOKEN`。
+去 **Workers & Pages → huzhou → Settings → Variables and Secrets** 添加：
 
-默认配置已经调好，不用动：
+| 名称 | 类型 | 值 |
+|---|---|---|
+| `ADMIN_TOKEN` | **Secret（加密）** | 一串随机字符串，例如 `e9af75ca5bc64361ee495d9e2ad65e31` |
+| `STEP_SIZE` | 明文 | `1`（免费计划别调大） |
+| `LIST_LIMIT` | 明文 | `12` |
 
-```toml
-[triggers]
-crons = ["* * * * *"]     # 每分钟一次
-[vars]
-STEP_SIZE = "1"           # 每次只处理 1 个任务
-LIST_LIMIT = "12"         # 每个栏目取最新 12 条
-```
+`wrangler.toml` 里已经设了 `keep_vars = true`，否则**下一次 CI 部署会把 dashboard 上配的 var 全清掉**
+（wrangler 默认行为是部署前删除所有已存在的 var）。Secret 不受影响，部署永远不会删 Secret。
+
+代码里都有兜底：`STEP_SIZE` 缺省 1、`LIST_LIMIT` 缺省 12、`ADMIN_TOKEN` 为空时管理接口自动关闭。
 
 ### 4.（强烈建议）先灌历史数据
 

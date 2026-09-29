@@ -751,7 +751,7 @@ async function dispatch(request, env) {
 
     if ((path === '/api/start' || path === '/api/step') && request.method === 'POST') {
       if (!authorized(request, env)) return jsonRes({ ok: false, error: 'unauthorized' }, 401);
-      const n = Number(url.searchParams.get('n')) || Number(env.STEP_SIZE) || 2;
+      const n = Number(url.searchParams.get('n')) || Number(env.STEP_SIZE) || 1;
       const started = path === '/api/start' ? await startCycle(env, { force: true }) : null;
       // 扫描任务本身很轻，先跑掉再按预算解析详情
       let scan = [];
@@ -784,7 +784,7 @@ export default {
     if (idx.meta.lastScan !== cstDate()) {
       await startCycle(env);
     }
-    await runBatch(env, Number(env.STEP_SIZE) || 2);
+    await runBatch(env, Number(env.STEP_SIZE) || 1);
   },
 
   async fetch(request, env) {
