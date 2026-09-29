@@ -3,6 +3,7 @@
 # 采集只能在国内跑完后把结果推上来。
 # 只忽略可重新生成的中间产物：
 kv-bulk.json
+cloud/dist/
 data/*.tmp
 data/state.json.bak
 
