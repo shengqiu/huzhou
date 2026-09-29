@@ -5,6 +5,11 @@
 为什么要有这层：hbj.huzhou.gov.cn 拒绝境外 IP，GitHub Actions 和 Cloudflare
 都抓不到。把抓取放到境内云函数里，Actions 只负责调度、合并和发布。
 
+对外暴露用「函数 URL」：腾讯云 API 网关已于 2025-06-30 停服、API 网关触发器下线，
+官方指定的替代就是函数 URL——不收费、链路纯透传（没有网关那一层 15s 超时）、
+且兼容 apigw 响应格式。注意它的 event 里 query 在 `queryString` 字段，
+且去掉了 isBase64Encoded / requestContext，本文件已做兼容。
+
 设计要点：
   * 云函数不保存状态。已处理的公告 id 由调用方（Actions）通过请求体带过来，
     处理完再带回去 —— 所以函数可以随便冷启动、随便扩缩容，不用接 COS/OSS。
@@ -112,10 +117,8 @@ def _parse_body(event):
     raw = event.get("body")
     if raw is None:
         return {}
-    if event.get("isBase64Encoded") or (isinstance(event.get("headers"), dict)
-            and "application/json" not in str(event["headers"].get("content-type", ""))
-            and event.get("isBase64Encoded")):
-        raw = base64.b64decode(raw)
+    # 函数 URL 已经去掉了 isBase64Encoded 字段，所以不能只看标志位，
+    # 直接试 JSON，不行再试 base64
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8", "replace")
     if not raw:
@@ -123,7 +126,32 @@ def _parse_body(event):
     try:
         return json.loads(raw)
     except Exception:
+        pass
+    try:
+        return json.loads(base64.b64decode(raw).decode("utf-8", "replace"))
+    except Exception:
         return {}
+
+
+def _parse_query(event):
+    """函数 URL 把 query 放在 event['queryString']，
+    API 网关（已下线）放在 event['queryStringParameters']，两者都兼容。"""
+    for key in ("queryStringParameters", "queryString", "query"):
+        v = event.get(key)
+        if not v:
+            continue
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, str):
+            try:
+                d = json.loads(v)
+                if isinstance(d, dict):
+                    return d
+            except Exception:
+                pass
+            from urllib.parse import parse_qs
+            return {k: val[0] for k, val in parse_qs(v).items()}
+    return {}
 
 
 def _resp(code, obj):
@@ -141,15 +169,15 @@ def _resp(code, obj):
 
 def main_handler(event, context):
     try:
-        query = event.get("queryStringParameters") or {}
-        if not isinstance(query, dict):
-            query = {}
+        query = _parse_query(event)
         if not _check_auth(query, event.get("headers") or {}):
             return _resp(403, {"ok": False, "error": "bad token"})
 
         path = event.get("path") or ""
         body = _parse_body(event)
-        method = (event.get("httpMethod") or event.get("requestContext", {}).get("httpMethod") or "").upper()
+        method = (event.get("httpMethod")
+                  or (event.get("requestContext") or {}).get("httpMethod")
+                  or "").upper()
 
         if path.rstrip("/").endswith("/health") or method == "GET":
             return _resp(200, {"ok": True, "service": "huzhou-epi-scrape",

@@ -45,7 +45,7 @@ SIZE=$(du -h "$OUT" | cut -f1)
 echo "✅ $OUT（$SIZE）"
 echo
 echo "腾讯云：控制台 → 云函数 → 新建 → 事件函数 Python 3.10"
-echo "        上传 zip（本地上传 zip 包）→ 入口 main_handler"
-echo "        内存 512MB / 超时 300s → 触发器选 API 网关"
+echo "        执行方法填 main.main_handler，内存 512MB，超时 300s"
+echo "        对外用「函数 URL」（API 网关已 2025-06-30 停服），授权类型选「开放」"
 echo "阿里云：函数计算 → 创建函数 → HTTP 函数 → 运行环境 Python 3.10"
 echo "        上传 zip → 入口 handler"

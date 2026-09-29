@@ -85,45 +85,73 @@ Actions 合并进 data/items.json → 渲染看板 → 提交 → Pages 发布
 |---|---|
 | `SCRAPE_TOKEN` | 一个长随机串，比如 `openssl rand -hex 24` 的输出 |
 
-### 2.4 加 API 网关触发器
+### 2.4 开「函数 URL」对外暴露
 
-触发管理 → 创建触发器 → **API 网关触发器**
+腾讯云 **API 网关产品已于 2025-06-30 停服，API 网关触发器同步下线**
+（2024-07-01 起就不再支持新建）。官方指定的替代是 **函数 URL**，
+而且对我们更合适：
 
-- 请求方法：**ANY**（探活用 GET，采集用 POST）
-- 鉴权方式：**免鉴权**（我们自己在函数里校验 token）
-- 发布环境：发布
+| | API 网关（已下线） | 函数 URL |
+|---|---|---|
+| 费用 | 调用费 + 流量费 | **不收费** |
+| 链路 | 经过网关，有独立超时 | **纯透传，没有那一层超时** |
+| 响应格式 | 集成响应 | **兼容 apigw 响应，无需改造** |
 
-建好后记下「访问路径」，形如：
+函数详情页 → 左侧 **函数 URL** → **新建函数 URL**：
+
+| 配置项 | 选什么 |
+|---|---|
+| 别名/版本 | `$LATEST`（URL 跟版本一对一绑定） |
+| 公网访问 | 开启 |
+| 授权类型 | **开放**（我们在函数里自己校验 token；选 CAM 鉴权的话调用方要做签名） |
+| CORS | 随便，用不到 |
+
+建好后得到 URL，形如：
 
 ```
-https://service-xxxxxxxx-1234567890.sh.apigw.tencentcs.com/release/huzhou-epi-scrape
+https://1251234567-abcdefgh.ap-shanghai.tencentscf.com
 ```
 
-> 从**云函数控制台**建的触发器默认开启「集成响应」，本仓库的返回格式已适配
-> （`isBase64Encoded` / `statusCode` / `headers` / `body` 四件套）。
+> ⚠️ 函数 URL **默认是关闭的**，必须手动建。而且它跟版本/别名一对一绑定，
+> 以后发新版本要记得给新版本再开一次，或者用别名。
 
-### 2.5 ⚠️ 改 API 网关的后端超时
+### 2.5 event 结构变了，代码已适配
 
-**这一步不做就一定超时。** API 网关超时和函数超时是分别生效的：
+函数 URL 给事件函数的 event **兼容 apigw 协议，但去掉了几个字段**：
 
-- 网关超时 < 函数超时 → 网关先掐断，返回 5xx
-- 网关超时 > 函数超时 → 函数先超时，返回 200 但内容是报错
+```jsonc
+{
+  "body": "{\"test\":\"hello\"}",
+  "headers": { "content-type": "application/json" },
+  "httpMethod": "POST",
+  "path": "/",
+  "queryString": { "token": "xxx" }        // ← 注意：不是 queryStringParameters
+}
+```
 
-网关默认后端超时通常只有 15 秒。去
-**API 网关控制台 → 服务 → 对应 API → 后端配置 → 后端超时**，改成 **300 秒**。
+去掉了 `isBase64Encoded`、`requestContext`、`queryStringParameters`、
+`pathParameters`、`headerParameters`。
 
-日常增量其实只用 ~15 秒（列表 16 个请求 + 解析 1~3 条详情），
-但如果网关就是不让改到 300，设 60 秒也能正常跑。
+`cloud/main.py` 已经同时兼容两种结构（函数 URL 的 `queryString` 和
+老 API 网关的 `queryStringParameters`），body 先按 JSON 解析、
+失败再试 base64，所以两种都能跑。已本地验证：
+
+```
+函数URL POST → 200 ok | scanned 16
+函数URL GET  → 200          （探活）
+无 token     → 403
+旧 apigw 结构 → 200          （向后兼容）
+```
 
 ### 2.6 测试
 
 ```bash
 # 探活
-curl 'https://service-xxx.sh.apigw.tencentcs.com/release/huzhou-epi-scrape?token=你的TOKEN'
+curl 'https://1251234567-abcdefgh.ap-shanghai.tencentscf.com?token=你的TOKEN'
 # → {"ok": true, "service": "huzhou-epi-scrape", "columns": 16, "auth": true}
 
 # 真跑一次（不写文件）
-SCRAPE_URL='https://service-xxx.../release/huzhou-epi-scrape' \
+SCRAPE_URL='https://1251234567-abcdefgh.ap-shanghai.tencentscf.com' \
 SCRAPE_TOKEN='你的TOKEN' \
 python3 tools/fetch_remote.py --dry-run
 ```

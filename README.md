@@ -48,7 +48,8 @@ Actions（境外无所谓） → POST seen → 境内云函数抓+解析 → 返
 一个纯函数就够。日常增量只传几十 KB。
 
 完整部署步骤见 [`cloud/README.md`](cloud/README.md) —— 打包、上传、
-改超时（API 网关默认 15s 必超时）、配 `SCRAPE_URL`/`SCRAPE_TOKEN` 两个 secret。
+开放函数 URL（腾讯云 API 网关已 2025-06-30 停服，改用函数 URL，不收费）、
+配 `SCRAPE_URL`/`SCRAPE_TOKEN` 两个 secret。
 
 ### 3. 让「每天 09:00」真正抓到数据：装 self-hosted runner
 
