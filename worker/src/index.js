@@ -134,6 +134,39 @@ async function fetchText(url) {
   return res.text();
 }
 
+/** 诊断用：在 Worker 自己的网络环境里真实请求一次列表接口，把细节全吐出来 */
+async function probeColumn(colId) {
+  const out = { col: colId, now: cstNow(), steps: [] };
+  for (const tag of ALT_TAGS) {
+    const url = LIST_API.replace('{tag}', tag).replace('{col}', colId);
+    const t0 = Date.now();
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': UA, 'Accept-Language': 'zh-CN,zh;q=0.9' },
+        signal: AbortSignal.timeout(20000),
+      });
+      const text = await res.text();
+      let parsed = null, parseErr = null;
+      try { parsed = JSON.parse(text); } catch (e) { parseErr = String(e).slice(0, 120); }
+      const html = parsed?.data?.html ?? '';
+      out.steps.push({
+        tag, url, ms: Date.now() - t0,
+        httpStatus: res.status,
+        contentType: res.headers.get('content-type'),
+        bodyLen: text.length,
+        bodyHead: String(text).slice(0, 300),
+        parseErr,
+        htmlLen: html.length,
+        hasArt: html.includes('art_'),
+        cfRay: res.headers.get('cf-ray'),
+      });
+    } catch (e) {
+      out.steps.push({ tag, url, ms: Date.now() - t0, error: String(e).slice(0, 200) });
+    }
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------ 列表单元 */
 
 /** 抓一个栏目，产出 entry 列表。单次 CPU 约 1ms */
@@ -435,7 +468,9 @@ async function runOneTask(env) {
     const fresh = entries.filter((e) => !known.has(e.art_id));
     const next = [...fresh.map((e) => ({ t: 'detail', e })), ...rest];
     await env.EPI_KV.put(K.pending, JSON.stringify(next));
-    return { kind: 'list', col: task.col, found: entries.length, queued: fresh.length, rest: next.length };
+    // 返回 0 条是异常信号（本地能抓到，云上抓不到通常是出口 IP 被拦），暴露到 idx.meta.lastError
+    const err = entries.length === 0 ? `栏目 ${task.col} 返回 0 条（出口被拦？接口变更？）` : null;
+    return { kind: 'list', col: task.col, found: entries.length, queued: fresh.length, rest: next.length, err };
   }
 
   if (task.t === 'detail') {
@@ -747,6 +782,12 @@ async function dispatch(request, env) {
       ));
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
       return jsonRes({ pendingTasks: pending.length, totalItems: total, counts, meta: idx.meta });
+    }
+
+    // 诊断接口：GET /api/probe?col=1229208553 —— 看 Worker 出网能不能拿到列表数据
+    if (path === '/api/probe') {
+      const col = url.searchParams.get('col') || '1229208553';
+      return jsonRes(await probeColumn(col));
     }
 
     if ((path === '/api/start' || path === '/api/step') && request.method === 'POST') {
