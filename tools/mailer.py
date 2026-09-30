@@ -4,8 +4,8 @@
 按「项目」粒度把环评公示发邮件，附件打包随信发送。
 
 一条公告里通常有好几个项目，这里**一个项目一封邮件**：
-  - 附件小（≤ --max-attach，默认 30MB）→ 下载 → 打包成 zip → 作为邮件附件
-  - 附件大（超过邮件上限）→ 正文给下载链接：政务网 OSS 直链 + （可选）COS 备份直链
+  - 默认只发链接：带附件的项目正文给政务网直链（境内可打开），**不下载附件本体**
+  - 显式 --attach 才下载并打包小附件（≤ --max-attach，默认 30MB）进邮件
   - 没有附件的项目也发，正文只放项目信息
 
 为什么是 30MB 而不是 50MB：邮件附件走 base64，体积膨胀 4/3，
@@ -481,8 +481,8 @@ def build_mail(rec, cfg, zippath=None, backup=None):
             lis.append(f'<li>{a["filename"]}'
                        + (f' · {human(a.get("size"))}' if a.get("size") else "")
                        + f'　→　<a href="{link}">政务网直链</a>{extra}</li>')
-        att_html = ('<p style="margin:14px 0 4px"><b>附件</b>（体积超过邮件上限，'
-                    '请以链接下载）：</p><ul>' + "".join(lis) + "</ul>")
+        att_html = ('<p style="margin:14px 0 4px"><b>附件</b>（请以下方链接下载）：</p>'
+                    '<ul>' + "".join(lis) + "</ul>")
     else:
         att_html = '<p style="margin:14px 0 4px">该公告未提供附件下载。</p>'
 
@@ -614,7 +614,9 @@ def main():
     ap.add_argument("--max-attach", type=int, default=30,
                     help="附件打包上限（MB，默认 30；超过就改发链接）")
     ap.add_argument("--link-only", action="store_true",
-                    help="强制链接模式：带附件项目只发政务网直链，不下载（境外/Actions 用）")
+                    help="强制链接模式：带附件项目只发政务网直链，不下载（现在也是默认行为）")
+    ap.add_argument("--attach", action="store_true",
+                    help="允许把小附件（≤ --max-attach MB）下载并打包进邮件本体；默认不发附件，只发链接")
     ap.add_argument("--interval", type=float, default=None,
                     help="两封之间至少间隔多少秒（默认取 MAIL_INTERVAL，再默认 5）")
     ap.add_argument("--to", default="", help="收件人，逗号分隔，默认取 MAIL_TO 环境变量")
@@ -682,11 +684,12 @@ def main():
     if not records:
         return 0
 
-    if args.link_only:
-        # 境外/Actions：网关下不动也解析不了直链，带附件的一律改发网关直链，跳过下载
+    # 默认只发链接（带附件项目正文给政务网直链），不下载附件本体；
+    # 只有显式 --attach 才允许把小附件打包进邮件。--link-only 是默认值别名，保留兼容。
+    if args.link_only or not args.attach:
         for r in records:
             r["mode"] = "info" if not r["atts"] else "link"
-        log("链接模式：跳过附件解析与下载")
+        log("链接模式：跳过附件解析与下载（带附件项目正文发政务网直链）")
     else:
         log("解析附件直链与体积…")
         resolve_all(records, load_cache())
