@@ -83,6 +83,26 @@ def safe_name(s, maxlen=90):
     return s[:maxlen] if len(s) > maxlen else s
 
 
+def load_env_file():
+    """
+    懒得每次 export 的话，把配置写进项目根的 .env（已在 .gitignore 里，不会入库）。
+    命令行里显式设过的环境变量优先，这里只做兜底。
+    """
+    for p in (os.path.join(ROOT, ".env"), os.path.join(ROOT, "tools", ".env")):
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip("\"'"))
+        except Exception:
+            pass
+
+
 def human(n):
     n = n or 0
     for u in ("B", "KB", "MB", "GB"):
@@ -568,11 +588,14 @@ def main():
     ap.add_argument("--interval", type=float, default=5, help="每封之间的间隔秒数（默认 5）")
     ap.add_argument("--to", default="", help="收件人，逗号分隔，默认取 MAIL_TO 环境变量")
     ap.add_argument("--dry-run", action="store_true", help="只列清单，不发信")
+    ap.add_argument("--check", action="store_true",
+                    help="只测 SMTP 能否连通并登录，不发任何邮件")
     ap.add_argument("--no-cos", action="store_true", help="不做 COS 备份")
     ap.add_argument("--force", action="store_true", help="忽略已发记录，重发")
     ap.add_argument("--keep", action="store_true", help="发完保留打包的 zip")
     ap.add_argument("--yes", action="store_true", help="数量多时不问确认")
     args = ap.parse_args()
+    load_env_file()
 
     cfg = {
         "host": os.environ.get("SMTP_HOST", "smtp.qq.com").strip(),
@@ -587,6 +610,24 @@ def main():
     if not args.dry_run and not (cfg["user"] and cfg["pass"]):
         sys.exit("缺少 SMTP_USER / SMTP_PASS。QQ 邮箱请填发件地址和 16 位授权码（不是登录密码）；"
                  "只想看清单就加 --dry-run")
+
+    # 只验连通性：连上、登录、握手，然后立刻退出，不投递任何邮件
+    if args.check:
+        log(f"测试 {cfg['host']}:{cfg['port']} …")
+        try:
+            s = connect(cfg)
+            code, _ = s.noop()
+            s.quit()
+            log(f"✓ SMTP 连通并登录成功（noop 返回 {code}）")
+            log(f"  发件人 {cfg['from']}")
+            log(f"  收件人 {', '.join(cfg['to'])}")
+            log("配置没问题，可以去掉 --check 正式发送了（建议先 --limit 3 试发）")
+            return 0
+        except Exception as e:
+            log(f"✗ 失败：{type(e).__name__}: {e}")
+            log("  常见原因：① 填的是登录密码而不是 16 位授权码；"
+                "② 邮箱没开启 IMAP/SMTP 服务；③ 端口/加密方式不对")
+            return 1
 
     records = load_projects(args)
     st = load_state()
