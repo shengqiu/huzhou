@@ -29,7 +29,23 @@
 |---|---|
 | 本地 / 本沙箱（国内） | ✅ 16 栏目 30 秒跑完，229 条 |
 | Cloudflare Workers 出口 | ❌ `TimeoutError` 20s（`/api/probe` 两种 tagId 全超时） |
-| GitHub Actions（美国机房） | ❌ 16 栏目全部超时，**504 秒拿到 0 条**，还把线上看板刷成了空数组 |
+| GitHub Actions（美国机房）→ `hbj.huzhou.gov.cn` | ❌ 16 栏目全部超时，**504 秒拿到 0 条**，还把线上看板刷成了空数组 |
+| GitHub Actions → **政务网 OSS 直链** | ✅ **能下载**（实测 `206`，1MB 用时 3–4 秒，约 250–324 KB/s） |
+
+**关键区分：被挡的是 `hbj.huzhou.gov.cn` 这个域名，不是文件本身。**
+附件真实存放在 `zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn`（浙江政务云 OSS），
+这个域名境外可达，且直链不带签名参数。实测（Actions 出口 IP `4.246.86.197`）：
+
+```
+① OSS 直链（小文件）  code=206 下载=1048576B 耗时=4.18s 速度=250947B/s
+② OSS 直链（137MB）   code=206 下载=1048576B 耗时=3.23s 速度=324176B/s
+③ 网关 hbj.huzhou.gov.cn  curl(28) 超时 30s   ← 只有这个被挡
+④ example.com         code=200 耗时=0.04s     ← 出口本身正常
+```
+
+推论：**只要手里有 OSS 直链，境外就能下附件**。而直链只能靠跟随网关的 302/301 拿到，
+所以正确做法是让**境内云函数在采集时顺手把 `oss_url` / `oss_size` 解析出来一起返回**，
+境外拿着直链就能直接下载，不必再碰网关。（待办里已记这条改进。）
 
 所以现在的分工是：**采集在国内跑 → 把结果推到 GitHub → GitHub Pages 只负责发布**。
 `pages.yml` 里有一道保险丝：看板数据为 0 条时**拒绝发布**，防止再次被空数据覆盖。
@@ -108,6 +124,9 @@ files/  kv-bulk.json ← gitignore
       + `SCRAPE_MODE=local` —— 云函数通了，这条不必做了
 - [ ] **按项目发邮件**：`tools/mailer.py` 已写好并 dry-run 通过（92 封），
       等用户提供 SMTP 授权码后试发 3 封验证排版，再分批全量
+- [ ] **云函数顺手解析 OSS 直链**：让 `cloud/main.py` 在采集时就解析出
+      `项目[].附件链接` 对应的 `oss_url`/`oss_size` 一起返回，
+      这样境外（Actions）拿到数据就能直接下附件，不必再碰被挡的网关
 - [ ] 决定 Cloudflare Worker 的去留（现在是个只能读 KV 的空壳）
 - [ ] `files/direct_links.csv` 是否纳入仓库（81 条 OSS 直链，配合 `aria2 -i` 可整包拉 1 GB）
 - [ ] 换 fine-grained token：现在用的是 classic PAT（repo+workflow），权限过大，且明文写在 git remote 里
