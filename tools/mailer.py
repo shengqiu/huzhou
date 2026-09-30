@@ -575,17 +575,43 @@ def is_temp_err(e):
     return True
 
 
+def wait_interval(st, interval):
+    """
+    保证两封之间至少隔 interval 秒。
+
+    单次只发一封时，脚本内部的间隔逻辑用不上（最后一封后面不 sleep），
+    所以改成跨运行记账：state 里存上次发信时刻，这次不够钟就先等。
+    这样用定时任务每 10 分钟跑一次、或者手动连着跑，节奏都一样。
+    """
+    last = st.get("last_sent_at")
+    if not last or interval <= 0:
+        return
+    try:
+        # last_sent_at 是按 CST 写的，得补回时区，否则和 now(CST) 相减会炸
+        t0 = datetime.strptime(last, "%Y-%m-%d %H:%M:%S").replace(tzinfo=CST)
+    except ValueError:
+        return
+    elapsed = (datetime.now(CST) - t0).total_seconds()
+    if elapsed < interval:
+        wait = int(interval - elapsed) + 1
+        log(f"距上次发信才 {int(elapsed)} 秒，按间隔要求等待 {wait} 秒"
+            f"（{wait // 60} 分 {wait % 60} 秒）…")
+        time.sleep(wait)
+
+
 # ---------------------------------------------------------------- 主流程
 def main():
     ap = argparse.ArgumentParser(description="按项目发送湖州环评公示邮件")
     ap.add_argument("--since", type=int, default=30, help="只处理最近 N 天的项目（默认 30）")
     ap.add_argument("--date-from", default="", help="起始日期 YYYY-MM-DD，优先级高于 --since")
-    ap.add_argument("--limit", type=int, default=0, help="本次最多处理多少封")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="本次最多处理多少封（默认取 MAIL_LIMIT，再默认 1）")
     ap.add_argument("--unit", default="", help="只发某个发布单位（子串匹配）")
     ap.add_argument("--keyword", default="", help="项目名/单位/地点包含该关键词")
     ap.add_argument("--max-attach", type=int, default=30,
                     help="附件打包上限（MB，默认 30；超过就改发链接）")
-    ap.add_argument("--interval", type=float, default=5, help="每封之间的间隔秒数（默认 5）")
+    ap.add_argument("--interval", type=float, default=None,
+                    help="两封之间至少间隔多少秒（默认取 MAIL_INTERVAL，再默认 5）")
     ap.add_argument("--to", default="", help="收件人，逗号分隔，默认取 MAIL_TO 环境变量")
     ap.add_argument("--dry-run", action="store_true", help="只列清单，不发信")
     ap.add_argument("--check", action="store_true",
@@ -596,6 +622,12 @@ def main():
     ap.add_argument("--yes", action="store_true", help="数量多时不问确认")
     args = ap.parse_args()
     load_env_file()
+
+    # 节奏参数允许写进 .env，免得每次敲长命令
+    if args.limit is None:
+        args.limit = int(os.environ.get("MAIL_LIMIT", "1") or 1)
+    if args.interval is None:
+        args.interval = float(os.environ.get("MAIL_INTERVAL", "5") or 5)
 
     cfg = {
         "host": os.environ.get("SMTP_HOST", "smtp.qq.com").strip(),
@@ -725,6 +757,7 @@ def main():
                     msg = build_mail(r, cfg, None, backup)
                     r["mode"] = "link"
 
+            wait_interval(st, args.interval)          # 不够钟就先等，防被判 spam
             tries, sent = 0, False
             while tries < 3 and not sent:
                 tries += 1
@@ -744,15 +777,16 @@ def main():
 
             if sent:
                 ok += 1
+                now = datetime.now(CST)
                 st["sent"][r["key"]] = {
-                    "at": datetime.now(CST).strftime("%Y-%m-%d %H:%M"),
+                    "at": now.strftime("%Y-%m-%d %H:%M"),
                     "project": r["name"], "unit": r["unit"], "date": r["date"],
                     "mode": r["mode"], "bytes": mail_size(msg),
                 }
+                st["last_sent_at"] = now.strftime("%Y-%m-%d %H:%M:%S")
                 st["failed"].pop(r["key"], None)
                 log(f"{tag} ✓ 已发送（{r['mode']}，{human(mail_size(msg))}）")
-            if idx % 5 == 0:
-                save_state(st)
+            save_state(st)
         except Exception as e:
             fail += 1
             rec = st["failed"].get(r["key"], {"tries": 0})
@@ -777,8 +811,8 @@ def main():
                         os.rmdir(d)
                     except Exception:
                         pass
-            if idx < len(records):
-                time.sleep(args.interval)
+            # 节奏统一由 wait_interval() 管（它按 last_sent_at 记账，跨运行也有效），
+            # 这里不能再 sleep 一次，否则两处叠加会变成双倍间隔
 
     try:
         smtp.quit()
