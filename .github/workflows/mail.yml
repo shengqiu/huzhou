@@ -1,0 +1,57 @@
+name: 按项目发邮件
+
+# 每 2 小时跑一次，每次发 1 封（MAIL_LIMIT=1）。
+# 跨运行间隔 2 小时 ≫ 10 分钟，QQ 不会判 spam，wait_interval 也不会阻塞。
+# 境外 runner 用 --link-only：跳过附件下载（网关下不动），带附件项目正文发政务网网关直链（境内可打开）。
+# SMTP 凭证全部走 GitHub Secrets，仓库里只有 .env.example 模板。
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write          # 回写 data/mail_state.json 需要
+
+concurrency:
+  group: mail
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 装依赖
+        run: pip install requests
+
+      - name: 发邮件
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAIL_LIMIT: ${{ secrets.MAIL_LIMIT }}
+          MAIL_INTERVAL: ${{ secrets.MAIL_INTERVAL }}
+        run: python3 tools/mailer.py --link-only --yes
+
+      # Actions 无状态，必须把 mail_state.json 提交回去，已发的下次才不会重发
+      - name: 回写发信状态
+        if: always()
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add data/mail_state.json
+          if git diff --cached --quiet; then
+            echo '::notice::无变化（没有新邮件发出）'
+          else
+            git commit -m "mail: 更新发信状态 $(date -u +%FT%TZ)"
+            git push origin "$(git branch --show-current)"
+          fi

@@ -29,6 +29,7 @@
     python3 tools/mailer.py --since 30 --yes          # 补发最近 30 天
     python3 tools/mailer.py --unit 长兴分局 --keyword 纺织
     python3 tools/mailer.py --no-cos --max-attach 20  # 不做 COS 备份，附件上限 20MB
+    python3 tools/mailer.py --link-only --yes         # 境外/Actions：只发网关直链，不下载附件
 """
 
 import os
@@ -612,6 +613,8 @@ def main():
     ap.add_argument("--keyword", default="", help="项目名/单位/地点包含该关键词")
     ap.add_argument("--max-attach", type=int, default=30,
                     help="附件打包上限（MB，默认 30；超过就改发链接）")
+    ap.add_argument("--link-only", action="store_true",
+                    help="强制链接模式：带附件项目只发政务网直链，不下载（境外/Actions 用）")
     ap.add_argument("--interval", type=float, default=None,
                     help="两封之间至少间隔多少秒（默认取 MAIL_INTERVAL，再默认 5）")
     ap.add_argument("--to", default="", help="收件人，逗号分隔，默认取 MAIL_TO 环境变量")
@@ -679,17 +682,22 @@ def main():
     if not records:
         return 0
 
-    log("解析附件直链与体积…")
-    resolve_all(records, load_cache())
-    raw_limit = args.max_attach * 1024 * 1024
-
-    for r in records:
-        if not r["atts"]:
-            r["mode"] = "info"                       # 无附件，正文只放项目信息
-        elif (r.get("total") or 0) <= raw_limit:
-            r["mode"] = "attach"
-        else:
-            r["mode"] = "link"
+    if args.link_only:
+        # 境外/Actions：网关下不动也解析不了直链，带附件的一律改发网关直链，跳过下载
+        for r in records:
+            r["mode"] = "info" if not r["atts"] else "link"
+        log("链接模式：跳过附件解析与下载")
+    else:
+        log("解析附件直链与体积…")
+        resolve_all(records, load_cache())
+        raw_limit = args.max_attach * 1024 * 1024
+        for r in records:
+            if not r["atts"]:
+                r["mode"] = "info"                   # 无附件，正文只放项目信息
+            elif (r.get("total") or 0) <= raw_limit:
+                r["mode"] = "attach"
+            else:
+                r["mode"] = "link"
 
     # ---- dry-run：打印清单就收工
     if args.dry_run:
