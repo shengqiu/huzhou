@@ -1,0 +1,14 @@
+测试时间 2026-09-30T00:09:32Z
+运行器出口 IP: 4.246.86.197
+=== ① 政务网 OSS 直链（小文件）===
+code=206 下载=1048576B 耗时=4.178474s 速度=250947B/s
+-rw-r--r-- 1 runner runner 1048576 Sep 30 00:09 /tmp/a.bin
+=== ② 政务网 OSS 直链（137MB 大文件，只取前 1MB）===
+code=206 下载=1048576B 耗时=3.234581s 速度=324176B/s
+-rw-r--r-- 1 runner runner 1048576 Sep 30 00:09 /tmp/b.bin
+=== ③ 对照：政务网网关 hbj.huzhou.gov.cn ===
+curl: (28) Connection timed out after 30001 milliseconds
+code=000 耗时=30.001697s
+网关不可达
+=== ④ 对照：普通境外站点 ===
+code=200 耗时=0.044154s
