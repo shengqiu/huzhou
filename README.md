@@ -33,7 +33,7 @@
 cd /workspace
 ./tools/publish.sh          # 采集 → 生成看板 → 提交 → 推送 → Pages 自动发布
 ./tools/publish.sh --no-push  # 只采集不推送
-./tools/publish.sh --mail     # 顺便按「项目」逐封发邮件 + 附件（见 docs/05-邮件推送.md）
+./tools/publish.sh --mail     # 顺便按「项目」逐封发邮件（默认发链接，详见 docs/05-邮件推送.md）
 ```
 
 ### 2. 云函数：不用常开机器也能全自动 ⭐
@@ -149,9 +149,9 @@ python3 tools/download.py --max-size 50        # 跳过超过 50MB 的
 python3 tools/download.py --workers 5          # 提高并发
 ```
 
-## 按项目发邮件（附件打包随信）
+## 按项目发邮件（默认只发链接）
 
-每条公告有好几个项目，**一个项目一封邮件**，附件打包后随信发送：
+每条公告有好几个项目，**一个项目一封邮件**：
 
 ```bash
 export SMTP_USER="你的邮箱@qq.com"      # 密码填 16 位 SMTP 授权码
@@ -159,11 +159,19 @@ export SMTP_PASS="十六位授权码"
 python3 tools/mailer.py --dry-run            # 先看清单，不发信
 python3 tools/mailer.py --limit 3            # 试发 3 封确认排版
 python3 tools/mailer.py --since 30 --yes     # 补发最近 30 天
+python3 tools/mailer.py --attach             # 境内手动：把小附件打包进邮件
 ```
 
-- 附件 ≤30MB → 打包成 zip 作为邮件附件；超过 → 正文给政务网 OSS 直链（+ 可选 COS 备份）
+- **默认只发链接**：带附件的项目正文给政务网直链（境内可打开），不下载附件本体
+- 加 `--attach` 才把小附件（≤ `--max-attach`，默认 30MB）下载并打包成 zip 随信；境外/Actions 下不动政务网，所以这步只在境内手动机跑
 - 没附件的项目也发，正文只放项目信息
 - 已发过的记在 `data/mail_state.json`，不会重复轰炸
+
+### 已上 GitHub Actions（`.github/workflows/mail.yml`）
+
+每 2 小时自动跑一次、每次 1 封，默认走链接模式（不下载附件），SMTP 凭证全在
+**Settings → Secrets**（`SMTP_USER` / `SMTP_PASS` / `MAIL_TO` 等），仓库只留 `.env.example`。
+发完把 `data/mail_state.json` 回写仓库，跨运行续传。
 
 完整说明见 [`docs/05-邮件推送.md`](docs/05-邮件推送.md)。
 
