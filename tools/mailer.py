@@ -486,7 +486,7 @@ def build_mail(rec, cfg, zippath=None, backup=None):
         att_html = '<p style="margin:14px 0 4px">该公告未提供附件下载。</p>'
 
     html = f"""<div style="font:14px/1.7 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:#1f2430">
-<h3 style="margin:0 0 12px;color:#1f7a4d">湖州市生态环境局 · 环评公示项目</h3>
+<h3 style="margin:0 0 12px;color:#1f7a4d">[环评公示] 湖州市生态环境局 · 项目推送</h3>
 <table style="border-collapse:collapse">{tr}</table>
 <p style="margin:14px 0 4px"><b>所属公告</b>：{rec["title"]}</p>
 <p style="margin:0"><a href="{rec["art_url"]}">{rec["art_url"]}</a></p>
@@ -497,6 +497,7 @@ def build_mail(rec, cfg, zippath=None, backup=None):
 </div>"""
 
     plain = "\n".join([
+        "[环评公示] 湖州市生态环境局 · 项目推送",
         f"项目名称：{rec['name']}",
         f"建设地点：{rec['loc'] or '—'}",
         f"建设单位：{rec['org'] or '—'}",
@@ -520,11 +521,12 @@ def build_mail(rec, cfg, zippath=None, backup=None):
     alt.attach(MIMEText(html, "html", "utf-8"))
     mixed.attach(alt)
 
-    subj = f"[环评公示] {rec['name'][:38]}"
-    if rec["unit"]:
-        subj += f"（{rec['unit']}）"
+    # [环评公示] 固定在最前；单位放项目名前面，手机上不用点开就知道是哪个分局
+    name_part = rec["name"][:40]
+    subj = (f"[环评公示] {rec['unit']} · {name_part}" if rec["unit"]
+            else f"[环评公示] {name_part}")
     mixed["Subject"] = _h(subj)
-    mixed["From"] = formataddr(("湖州环评监测", cfg["from"]))
+    mixed["From"] = formataddr(("湖州环评公示", cfg["from"]))
     mixed["To"] = ", ".join(cfg["to"])
     mixed["Date"] = formatdate(localtime=True)
     mixed["Message-ID"] = make_msgid("huzhou")
