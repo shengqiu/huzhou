@@ -99,7 +99,7 @@ files/  kv-bulk.json ← gitignore
 
 ## 读过再动手：三个不能破的约束
 
-1. **采集和发邮件都只能在境内跑**。别把 `monitor.py` 或 `tools/mailer.py` 塞回 GitHub Actions / Worker 的 cron——境外下不动政务网附件，attach 模式会全部退化成链接。采集的全自动现在靠 **境内云函数**（已上线，`daily.yml` 每天 09:00 调它）；邮件则走本沙箱或用户机器（可挂 `./tools/publish.sh --mail`）；备选是 **WorkBuddy 定时任务**或 self-hosted runner。
+1. **采集只能在境内跑；发邮件已上 Actions（仅链接模式）**。`monitor.py` 绝不能塞回 GitHub Actions——境外下不动 `hbj.huzhou.gov.cn`，采集必失败；采集的全自动靠 **境内云函数**（已上线，`daily.yml` 每天 09:00 调它）。`tools/mailer.py` 现在跑在 Actions 上（`.github/workflows/mail.yml`，每 2 小时 1 封），但**必须带 `--link-only`**：境外解析不了附件直链、也下不动网关，带附件项目一律正文发**政务网网关直链**（境内可打开），**绝不下载附件本体**。SMTP 凭证全走 GitHub Secrets（`SMTP_*` / `MAIL_*`），仓库里只有 `.env.example`。要发**真正带附件**的邮件，仍在境内跑（本沙箱/用户机器，`./tools/publish.sh --mail` 或定时任务），或等云函数返回 OSS 直链后改 mailer 从 OSS 下载（境外实测可下）。
 2. **`fileUrl` 是服务端加密的**。下载链接长这样 `download?fileUrl=<密文>&fileName=<文件名>.zip`，base64 解开是 128 字节密文，**算不出真实路径**，只能跟随 302 → 301 重定向到 OSS 直链。
 3. **附件总规模约 1 GB**，单个最大 137.5 MB。Worker 绝对不能下载附件本体（128 MB 内存上限 / KV 单值 25 MB / 命名空间 1 GB）。本体下载永远交给本地 `tools/download.py`。
 
@@ -122,8 +122,11 @@ files/  kv-bulk.json ← gitignore
 - [ ] **删除腾讯云子用户 `workbuddy` 并吊销其 SecretId/SecretKey**（部署已完成，密钥不必留）
 - [x] 备选：装 self-hosted runner（境内机器）+ 设 `RUNNER_LABEL=self-hosted`
       + `SCRAPE_MODE=local` —— 云函数通了，这条不必做了
-- [ ] **按项目发邮件**：`tools/mailer.py` 已写好并 dry-run 通过（92 封），
-      等用户提供 SMTP 授权码后试发 3 封验证排版，再分批全量
+- [x] **按项目发邮件（链接模式）已上 Actions**：`tools/mailer.py` + `.github/workflows/mail.yml`
+      （每 2 小时跑 1 次、每次 1 封、`--link-only`），SMTP 凭证在 GitHub Secrets，
+      `data/mail_state.json` 跨运行回写续传。端到端实测通过（已发 5 封）
+- [ ] **发真正带附件的邮件**：需境内执行（本沙箱/用户机器 `--mail`），或让云函数返回
+      OSS 直链后改 mailer 从 OSS 下载（境外可下，见下条待办）
 - [ ] **云函数顺手解析 OSS 直链**：让 `cloud/main.py` 在采集时就解析出
       `项目[].附件链接` 对应的 `oss_url`/`oss_size` 一起返回，
       这样境外（Actions）拿到数据就能直接下附件，不必再碰被挡的网关
