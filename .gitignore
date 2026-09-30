@@ -17,6 +17,7 @@ files/
 .env
 tools/.env
 .env.*
+!.env.example
 
 # Python
 __pycache__/
