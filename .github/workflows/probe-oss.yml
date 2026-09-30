@@ -1,0 +1,26 @@
+name: probe-oss（临时测试）
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ① 政务网 OSS 直链（境外能否下载）
+        run: |
+          for u in "https://zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn/cms_files/filemanager/1572864/attach/20269/7e60276b20fd41b582c4cc5a8ced40c7.rar?fileName=%EF%BC%88%E5%85%AC%E7%A4%BA%E7%89%88%EF%BC%89%E5%BE%B7%E6%B8%85%E5%BE%B7%E4%B8%BA%E6%96%B0%E6%9D%90%E6%96%99%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8%E5%B9%B4%E4%BA%A720%E4%B8%87%E5%8F%B0%E5%A5%97%E9%80%8F%E6%98%8E%E5%90%B8%E6%B3%A2%E4%BD%93%E6%9D%90%E6%96%99%E6%99%BA%E8%83%BD%E5%85%89%E7%94%B5%E8%86%9C%E9%A1%B9%E7%9B%AE%E7%94%9F%E6%80%81%E7%8E%AF%E5%A2%83%E5%BD%B1%E5%93%8D%E6%8A%A5%E5%91%8A%E8%A1%A8%281%29.rar" "https://zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn/cms_files/filemanager/1572864/attach/20269/e2ebf99f87d34b6fb2c5ee6d500ec9fb.zip?fileName=%E6%B9%96%E5%B7%9E%E8%8A%AF%E5%B1%8F%E5%8D%8A%E5%AF%BC%E4%BD%93%E6%9C%89%E9%99%90%E8%B4%A3%E4%BB%BB%E5%85%AC%E5%8F%B8%E5%B9%B4%E4%BA%A712%E4%B8%87%E7%89%87Micro-LED%E8%8A%AF%E7%89%87%E9%A1%B9%E7%9B%AE.zip"; do
+            echo "### $u"
+            curl -sS -o /tmp/o.bin \
+              -w "code=%{http_code} 下载=%{size_download}B 耗时=%{time_total}s 速度=%{speed_download}B/s\n" \
+              -r 0-1048575 -m 90 "$u" || echo "curl 退出码 $?"
+            ls -l /tmp/o.bin 2>/dev/null
+            head -c 4 /tmp/o.bin | xxd | head -1
+          done
+      - name: ② 对照：政务网网关 hbj.huzhou.gov.cn
+        continue-on-error: true
+        run: |
+          curl -sS -o /dev/null -w "code=%{http_code} 耗时=%{time_total}s\n" -m 30 "https://hbj.huzhou.gov.cn/" || echo "网关不可达"
+      - name: ③ 对照：OSS 根域（DNS/连通性）
+        continue-on-error: true
+        run: |
+          curl -sS -o /dev/null -w "code=%{http_code} 耗时=%{time_total}s\n" -m 30 \
+            "https://zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn/" || echo "OSS 根域不可达"
