@@ -1,8 +1,7 @@
 # 采集结果必须入库：GitHub Pages 直接发布 reports/index.html，
-# 而境外（GitHub Actions / Cloudflare）访问不了 hbj.huzhou.gov.cn，
+# 而境外（GitHub Actions）访问不了 hbj.huzhou.gov.cn，
 # 采集只能在国内跑完后把结果推上来。
 # 只忽略可重新生成的中间产物：
-kv-bulk.json
 cloud/dist/
 data/*.tmp
 data/state.json.bak
@@ -24,12 +23,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-
-# Node / wrangler
-node_modules/
-.wrangler/
-.dev.vars
-worker/wrangler.local.toml
 
 # 系统
 .DS_Store

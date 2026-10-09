@@ -5,7 +5,7 @@
 > 地址和 token **只存在 GitHub Secrets**（`SCRAPE_URL` / `SCRAPE_TOKEN`）里，别写进仓库。
 > 换地域/重建函数时直接跑：`python3 cloud/deploy_tc.py --region ap-shanghai --token <任意hex>`
 
-GitHub Actions / Cloudflare 都在境外，访问不了 `hbj.huzhou.gov.cn`。
+GitHub Actions 的托管 runner 在境外，访问不了 `hbj.huzhou.gov.cn`。
 把抓取放进**中国大陆的云函数**里，境外只负责调度和发布：
 
 ```

@@ -11,7 +11,7 @@
 为什么是 30MB 而不是 50MB：邮件附件走 base64，体积膨胀 4/3，
 再加上 QQ 服务器会追加 Received / X-QQ-* 头，留 20% 余量才不会在最后一步被拒。
 
-配置全部走环境变量（跟 push_kv.py 的 CF_*、fetch_remote.py 的 SCRAPE_* 一个风格）：
+配置全部走环境变量（跟 fetch_remote.py 的 SCRAPE_* 一个风格）：
 
     SMTP_HOST  默认 smtp.qq.com
     SMTP_PORT  默认 465（SSL）

@@ -3,30 +3,27 @@
 #
 # 为什么必须在本地/沙箱跑采集：
 #   hbj.huzhou.gov.cn 拒境外 IP。实测 GitHub Actions（美国机房）16 个栏目全部
-#   超时，504 秒拿到 0 条；Cloudflare Workers 出口同样是 20s TimeoutError。
+#   超时，504 秒拿到 0 条。
 #   所以采集放国内跑，GitHub 只做发布（.github/workflows/pages.yml）。
 #
 # 用法：
 #   ./tools/publish.sh              # 采集 + 推送（无新增就什么都不提交）
 #   ./tools/publish.sh --force      # 无新增也提交（重刷看板样式/时间戳）
 #   ./tools/publish.sh --no-push    # 只采集不推送
-#   ./tools/publish.sh --kv         # 顺便同步到 Cloudflare KV（需 CF_* 环境变量）
-#   ./tools/publish.sh --mail       # 顺便按项目发邮件（需 SMTP_* 环境变量）
+#   ./tools/publish.sh --mail       # 顺便按「项目」逐封发邮件（默认发链接，详见 docs/05-邮件推送.md）
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 FORCE=0
 PUSH=1
-KV=0
 MAIL=0
 for a in "$@"; do
   case "$a" in
     --force)   FORCE=1 ;;
     --no-push) PUSH=0 ;;
-    --kv)      KV=1 ;;
     --mail)    MAIL=1 ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "未知参数: $a"; exit 1 ;;
   esac
 done
@@ -46,13 +43,6 @@ d=json.load(open('data/items.json',encoding='utf-8'))
 print(sum(len(p.get('附件链接',[])) for i in d for p in i.get('项目',[])))
 ")
 echo "▶ 附件链接 $att 个"
-
-python3 tools/export_kv.py
-
-if [ "$KV" = "1" ]; then
-  echo "▶ 同步到 Cloudflare KV"
-  python3 tools/push_kv.py
-fi
 
 # 邮件必须在采集之后（依赖新的 items.json）、git add 之前（不污染提交）。
 # 别塞进 daily.yml：GitHub Actions 在境外下不动政务网附件，会全部退化成链接模式。

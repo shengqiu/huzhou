@@ -10,22 +10,21 @@
 
 | 环境 | 结果 |
 |---|---|
-| 境内（本机 / 国内服务器） | ✅ 16 栏目 30 秒跑完，229 条 |
-| Cloudflare Workers 出口 | ❌ `TimeoutError` 20s |
+| 境内（本机 / 国内服务器 / 境内云函数） | ✅ 16 栏目 3~5 秒跑完，249 条 |
 | GitHub Actions 托管 runner（美国机房） | ❌ 16 栏目全超时，504 秒 0 条 |
 
-所以 **GitHub Actions 只负责发布，不负责采集**。看板发布在
+所以 **GitHub Actions 只负责调度和发布，不负责采集**。看板发布在
 **https://shengqiu.github.io/huzhou/**。
 
-## 四种跑法
+## 三种跑法
 
-| | 手动一键 | **云函数（推荐）** | Actions + 自托管 runner | Cloudflare Worker |
-|---|---|---|---|---|
-| 目录 | `tools/publish.sh` | `cloud/` | `.github/workflows/daily.yml` | `worker/` |
-| 触发 | 手动 | **每天 09:00 CST 自动** | 每天 09:00 CST 自动 | Cron（每分钟） |
-| 采集在哪跑 | 本机（境内） | 腾讯云/阿里云（境内） | 你自己常开的机器 | Cloudflare 出口 ❌ |
-| 要常开机器吗 | 否 | **否** | 是 | 否 |
-| 看板 | GitHub Pages | GitHub Pages | GitHub Pages | Worker 渲染 |
+| | 手动一键 | **云函数（推荐）** | Actions + 自托管 runner |
+|---|---|---|---|
+| 目录 | `tools/publish.sh` | `cloud/` | `.github/workflows/daily.yml` |
+| 触发 | 手动 | **每天 09:00 CST 自动** | 每天 09:00 CST 自动 |
+| 采集在哪跑 | 本机（境内） | 腾讯云/阿里云（境内） | 你自己常开的机器 |
+| 要常开机器吗 | 否 | **否** | 是 |
+| 看板 | GitHub Pages | GitHub Pages | GitHub Pages |
 
 ### 1. 手动一键（最快）
 
@@ -115,16 +114,6 @@ open reports/index.html
 
 需要 `requests` + `beautifulsoup4`。
 
-## 导出到 KV（推荐第一步）
-
-把本地攒好的历史一次性灌进 Worker 的 KV，Worker 之后就只处理真正的新公告：
-
-```bash
-python3 monitor.py            # 采集 → data/items.json
-python3 tools/export_kv.py    # 按月份分片 → kv-bulk.json
-cd worker && npx wrangler kv bulk put ../kv-bulk.json --binding=EPI_KV
-```
-
 ## 下载公告里的附件
 
 这才是最有价值的部分——环境影响报告书/报告表全本、公众参与说明。
@@ -137,8 +126,8 @@ cd worker && npx wrangler kv bulk put ../kv-bulk.json --binding=EPI_KV
     最大单个  137.5 MB     典型 20~40 MB     最小 349 KB
 ```
 
-**别用 Cloudflare 下这些文件**——Workers 内存只有 128MB，KV 单值上限 25MB。
-用本地脚本：
+**必须本地下载**——附件单文件最大 137.5 MB，远超任何 Serverless 环境的内存/存储上限。
+用本地脚本（支持 Range 断点续传、并发、按条件过滤）：
 
 ```bash
 python3 tools/download.py --dry-run            # 先看清楚有哪些、多大
